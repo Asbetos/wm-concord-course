@@ -1,0 +1,217 @@
+<header class="lesson-head">
+  <!--LESSON_HEAD-->
+  <p class="lede"><code>train.py</code> trains one zoo model: it loads the games, builds a transformer, an LSTM or a Mamba model at the chosen scale, trains it to predict the next move, measures two numbers on validation games, and saves everything. Every one of the 243 models goes through this one file.</p>
+  <p class="meta">About <!--MINUTES--> minutes · File: <code>src/zoo/train.py</code></p>
+</header>
+
+<section class="section" id="l6-steps">
+  <h3><span class="num">6.1</span>Five steps</h3>
+  <ol class="steps">
+    <li><span><strong>Data.</strong> Load 1.28 million training games and 1,000 validation games of one distribution (Lesson 4) and turn the training games into tokens with <code>to_tokens()</code>.</span></li>
+    <li><span><strong>Model.</strong> Build the architecture at the scale from <code>SCALE_CONFIG</code> (Lesson 5).</span></li>
+    <li><span><strong>Train.</strong> 5,000 optimizer steps of 256 games, predicting every next move.</span></li>
+    <li><span><strong>Evaluate.</strong> Next-token accuracy and legal move rate on the validation games.</span></li>
+    <li><span><strong>Save.</strong> The weights and a run summary under <code>outputs/zoo/&lt;model_id&gt;/</code>, and a training record in <code>results/zoo_training/</code>.</span></li>
+  </ol>
+<pre class="plain"><code>python src/zoo/train.py --arch transformer --scale small --distribution synthetic --seed 0   <span class="c"># one zoo model</span>
+python src/zoo/train.py --arch mamba --scale large --micro_batch 64                         <span class="c"># big model: batches in chunks of 64</span>
+python src/zoo/train.py --synthetic 200 --steps 20 --batch 16 --device cpu                  <span class="c"># smoke test: no data, no GPU</span></code></pre>
+</section>
+
+<section class="section" id="l6-archs">
+  <h3><span class="num">6.2</span>Three architectures behind one shape</h3>
+  <div class="prose">
+    <p>The diagnostics must never care which architecture they score. So every model class offers the same three methods: <code>layer_outputs(x)</code> returns the vector after each layer, <code>readout(h)</code> turns a last-layer vector into 61 next-move scores, and <code>forward(x)</code> is simply <code>readout(layer_outputs(x)[-1])</code>. That last line guarantees that the vectors D4 probes are exactly the vectors the model predicts from.</p>
+  </div>
+  <figure>
+    <div class="fig-box">
+      <svg viewBox="0 0 960 360" role="img" aria-label="Three model stacks side by side. Transformer: token plus position embedding, TransformerEncoderLayer times N with pre-norm, GELU and a causal mask, then LayerNorm and a linear layer to 61 scores. LSTM: token embedding, single-layer nn.LSTM times N, then a linear layer to 61. Mamba: token embedding, Mamba residual block times N with state size 16, convolution 4 and expansion 2, then LayerNorm and a linear layer to 61. layer_outputs returns the vector after every block; forward is readout of the last one.">
+        <defs>
+          <marker id="l6a-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker>
+        </defs>
+        <g>
+          <text class="t-title" x="35" y="24">Transformer (GPT class)</text>
+          <text class="t-mono-muted" x="170" y="48" text-anchor="middle">61 next-move scores</text>
+          <path class="wire" d="M170,60 V54" marker-end="url(#l6a-arrow)"/>
+          <rect class="box" x="35" y="60" width="270" height="36" rx="7"/>
+          <text class="t-body" x="170" y="83" text-anchor="middle">LayerNorm → Linear to 61</text>
+          <path class="wire" d="M170,126 V100" marker-end="url(#l6a-arrow)"/>
+          <rect class="box-tint" x="43" y="118" width="254" height="72" rx="7"/>
+          <rect class="box-tint" x="39" y="122" width="262" height="72" rx="7"/>
+          <rect class="box-tint" x="35" y="126" width="270" height="72" rx="7"/>
+          <text class="t-mono" x="170" y="155" text-anchor="middle">TransformerEncoderLayer × N</text>
+          <text class="t-muted" x="170" y="178" text-anchor="middle">pre-norm · GELU · causal mask</text>
+          <path class="wire" d="M170,226 V202" marker-end="url(#l6a-arrow)"/>
+          <rect class="box" x="35" y="226" width="270" height="36" rx="7"/>
+          <text class="t-body" x="170" y="249" text-anchor="middle">token + position embedding</text>
+          <path class="wire" d="M170,280 V266" marker-end="url(#l6a-arrow)"/>
+          <text class="t-mono" x="170" y="294" text-anchor="middle">tokens (B, T)</text>
+        </g>
+        <g>
+          <text class="t-title" x="345" y="24">LSTM</text>
+          <text class="t-mono-muted" x="480" y="48" text-anchor="middle">61 next-move scores</text>
+          <path class="wire" d="M480,60 V54" marker-end="url(#l6a-arrow)"/>
+          <rect class="box" x="345" y="60" width="270" height="36" rx="7"/>
+          <text class="t-body" x="480" y="83" text-anchor="middle">Linear to 61</text>
+          <path class="wire" d="M480,126 V100" marker-end="url(#l6a-arrow)"/>
+          <rect class="box-tint" x="353" y="118" width="254" height="72" rx="7"/>
+          <rect class="box-tint" x="349" y="122" width="262" height="72" rx="7"/>
+          <rect class="box-tint" x="345" y="126" width="270" height="72" rx="7"/>
+          <text class="t-mono" x="480" y="155" text-anchor="middle">nn.LSTM(1 layer) × N</text>
+          <text class="t-muted" x="480" y="178" text-anchor="middle">order comes from the recurrence</text>
+          <path class="wire" d="M480,226 V202" marker-end="url(#l6a-arrow)"/>
+          <rect class="box" x="345" y="226" width="270" height="36" rx="7"/>
+          <text class="t-body" x="480" y="249" text-anchor="middle">token embedding</text>
+          <path class="wire" d="M480,280 V266" marker-end="url(#l6a-arrow)"/>
+          <text class="t-mono" x="480" y="294" text-anchor="middle">tokens (B, T)</text>
+        </g>
+        <g>
+          <text class="t-title" x="655" y="24">Mamba (mambapy)</text>
+          <text class="t-mono-muted" x="790" y="48" text-anchor="middle">61 next-move scores</text>
+          <path class="wire" d="M790,60 V54" marker-end="url(#l6a-arrow)"/>
+          <rect class="box" x="655" y="60" width="270" height="36" rx="7"/>
+          <text class="t-body" x="790" y="83" text-anchor="middle">LayerNorm → Linear to 61</text>
+          <path class="wire" d="M790,126 V100" marker-end="url(#l6a-arrow)"/>
+          <rect class="box-tint" x="663" y="118" width="254" height="72" rx="7"/>
+          <rect class="box-tint" x="659" y="122" width="262" height="72" rx="7"/>
+          <rect class="box-tint" x="655" y="126" width="270" height="72" rx="7"/>
+          <text class="t-mono" x="790" y="155" text-anchor="middle">Mamba residual block × N</text>
+          <text class="t-muted" x="790" y="178" text-anchor="middle">state 16 · conv 4 · expand 2</text>
+          <path class="wire" d="M790,226 V202" marker-end="url(#l6a-arrow)"/>
+          <rect class="box" x="655" y="226" width="270" height="36" rx="7"/>
+          <text class="t-body" x="790" y="249" text-anchor="middle">token embedding</text>
+          <path class="wire" d="M790,280 V266" marker-end="url(#l6a-arrow)"/>
+          <text class="t-mono" x="790" y="294" text-anchor="middle">tokens (B, T)</text>
+        </g>
+        <line class="divider" x1="35" y1="314" x2="925" y2="314"/>
+        <text class="t-body" x="35" y="334"><tspan class="t-strong">layer_outputs(x)</tspan>: the vector after each of the N blocks (shaded), each (B, T, d_model). D3 and D4 read these.</text>
+        <text class="t-body" x="35" y="354"><tspan class="t-strong">readout(h)</tspan>: the top box. forward(x) = readout(layer_outputs(x)[−1]).</text>
+      </svg>
+    </div>
+    <figcaption><b><!--FIGNUM--></b> Same inputs, same outputs, same two methods; only the middle differs. N and the width come from the scale: 4 × 128, 6 × 256 or 8 × 512.</figcaption>
+  </figure>
+  <!--CODE:src/zoo/train.py:74:102-->
+  <ul class="walk">
+    <li><span class="lref">77–78</span><span>Each token gets a learned embedding plus a learned position embedding for positions 0 to 58: attention alone has no sense of order.</span></li>
+    <li><span class="lref">79–83</span><span>N standard PyTorch encoder layers: feed-forward width 4 × d_model, no dropout, GELU, and <code>norm_first=True</code> (pre-norm, as in GPT-2).</span></li>
+    <li><span class="lref">90–96</span><span>The causal mask lets position t attend only to positions 0 to t, so a prediction never sees the move it is predicting. The output after every block is collected.</span></li>
+    <li><span class="lref">98–102</span><span><code>readout</code> applies a final LayerNorm and the linear head; <code>forward</code> is readout of the last block.</span></li>
+  </ul>
+  <!--CODE:src/zoo/train.py:105:124-->
+  <ul class="walk">
+    <li><span class="lref">105–108</span><span>One <code>nn.LSTM(num_layers=N)</code> would compute the same thing but only return the last layer. A stack of single-layer LSTMs makes every layer reachable for D4. (Checkpoints of the earlier multi-layer version no longer load, which is why some LSTMs were retrained.)</span></li>
+    <li><span class="lref">117–124</span><span>No position embedding: the recurrence itself carries the order. The hidden state after each layer is collected.</span></li>
+  </ul>
+  <!--CODE:src/zoo/train.py:133:153-->
+  <ul class="walk">
+    <li><span class="lref">134–135</span><span>The fast <code>mamba_ssm</code> CUDA kernels would not build on the course machines, so Mamba runs in plain PyTorch through <code>mambapy</code>. Same model, much slower (Lesson 5).</span></li>
+    <li><span class="lref">141–142</span><span>A selective state-space model: state size 16, a short convolution of 4, inner width 2 × d_model.</span></li>
+    <li><span class="lref">146–153</span><span>The model’s residual blocks are stepped through one by one, so the output after each block can be collected, exactly as <code>mambapy</code>’s own forward would compute it.</span></li>
+  </ul>
+</section>
+
+<section class="section" id="l6-loop">
+  <h3><span class="num">6.3</span>The training loop</h3>
+  <div class="prose">
+    <p>The task is next-token prediction, the same as a language model. The model reads a game and, at every position, predicts the move that comes next. In code that is one shift: the input is the game without its last token, the target is the game without its first.</p>
+  </div>
+  <figure>
+    <div class="fig-box">
+      <svg viewBox="0 0 900 214" role="img" aria-label="A token row 20 19 27 21 12 0 0 0 0 0. The input row is x without its last token; the target row is x shifted by one, 19 27 21 12 0 0 0 0 0. At each position the model reads the input so far and predicts the target below it. Targets equal to 0, the padding after the game ends, are ignored by the loss.">
+        <defs>
+          <marker id="l6b-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker>
+        </defs>
+        <text class="t-strong" x="20" y="64">input x[:, :-1]</text>
+        <text class="t-muted" x="20" y="82">what the model reads</text>
+        <text class="t-strong" x="20" y="148">target x[:, 1:]</text>
+        <text class="t-muted" x="20" y="166">what it must predict</text>
+        <text class="t-mono-muted" x="190" y="30" text-anchor="middle">position 0</text>
+        <rect class="box-tint" x="166" y="46" width="48" height="36" rx="5"/><text class="t-mono" x="190" y="69" text-anchor="middle">20</text>
+        <rect class="box-tint" x="222" y="46" width="48" height="36" rx="5"/><text class="t-mono" x="246" y="69" text-anchor="middle">19</text>
+        <rect class="box-tint" x="278" y="46" width="48" height="36" rx="5"/><text class="t-mono" x="302" y="69" text-anchor="middle">27</text>
+        <rect class="box-tint" x="334" y="46" width="48" height="36" rx="5"/><text class="t-mono" x="358" y="69" text-anchor="middle">21</text>
+        <rect class="box-tint" x="390" y="46" width="48" height="36" rx="5"/><text class="t-mono" x="414" y="69" text-anchor="middle">12</text>
+        <rect class="box" x="446" y="46" width="48" height="36" rx="5"/><text class="t-mono-muted" x="470" y="69" text-anchor="middle">0</text>
+        <rect class="box" x="502" y="46" width="48" height="36" rx="5"/><text class="t-mono-muted" x="526" y="69" text-anchor="middle">0</text>
+        <rect class="box" x="558" y="46" width="48" height="36" rx="5"/><text class="t-mono-muted" x="582" y="69" text-anchor="middle">0</text>
+        <text class="t-mono-muted" x="640" y="69" text-anchor="middle">…</text>
+        <path class="wire" d="M190,84 V126" marker-end="url(#l6b-arrow)"/>
+        <path class="wire" d="M246,84 V126" marker-end="url(#l6b-arrow)"/>
+        <path class="wire" d="M302,84 V126" marker-end="url(#l6b-arrow)"/>
+        <path class="wire" d="M358,84 V126" marker-end="url(#l6b-arrow)"/>
+        <path class="wire-dash" d="M414,84 V126"/>
+        <path class="wire-dash" d="M470,84 V126"/>
+        <path class="wire-dash" d="M526,84 V126"/>
+        <path class="wire-dash" d="M582,84 V126"/>
+        <rect class="box-truth" x="166" y="128" width="48" height="36" rx="5"/><text class="t-mono" x="190" y="151" text-anchor="middle">19</text>
+        <rect class="box-truth" x="222" y="128" width="48" height="36" rx="5"/><text class="t-mono" x="246" y="151" text-anchor="middle">27</text>
+        <rect class="box-truth" x="278" y="128" width="48" height="36" rx="5"/><text class="t-mono" x="302" y="151" text-anchor="middle">21</text>
+        <rect class="box-truth" x="334" y="128" width="48" height="36" rx="5"/><text class="t-mono" x="358" y="151" text-anchor="middle">12</text>
+        <rect class="box" x="390" y="128" width="48" height="36" rx="5"/><text class="t-mono-muted" x="414" y="151" text-anchor="middle">0</text>
+        <rect class="box" x="446" y="128" width="48" height="36" rx="5"/><text class="t-mono-muted" x="470" y="151" text-anchor="middle">0</text>
+        <rect class="box" x="502" y="128" width="48" height="36" rx="5"/><text class="t-mono-muted" x="526" y="151" text-anchor="middle">0</text>
+        <rect class="box" x="558" y="128" width="48" height="36" rx="5"/><text class="t-mono-muted" x="582" y="151" text-anchor="middle">0</text>
+        <text class="t-mono-muted" x="640" y="151" text-anchor="middle">…</text>
+        <text class="t-body" x="678" y="64">a game that ended after</text>
+        <text class="t-body" x="678" y="82">5 moves, then padding</text>
+        <text class="t-warn" x="678" y="146">target 0 = padding:</text>
+        <text class="t-warn" x="678" y="164">ignored by the loss</text>
+        <text class="t-muted" x="166" y="196">Each position sees only the moves up to itself (the causal mask), so position 3 predicts move 4 from moves 0 to 3.</text>
+      </svg>
+    </div>
+    <figcaption><b><!--FIGNUM--></b> One shift turns a game into 58 prediction problems. Real games almost always fill every position; this short one shows where padding goes.</figcaption>
+  </figure>
+  <!--CODE:src/zoo/train.py:174:225-->
+  <ul class="walk">
+    <li><span class="lref">174–178</span><span>The learning rate climbs linearly for 200 warm-up steps, then falls along a cosine to zero at step 5,000. It always uses the full budget as the end point, so a 300-step throughput run trains on the same schedule.</span></li>
+    <li><span class="lref">184–185</span><span>AdamW with weight decay 0.01, and cross-entropy that ignores target 0, the padding.</span></li>
+    <li><span class="lref">190–191</span><span>Micro-batching: Mamba large splits each batch of 256 into chunks of 64. Each chunk’s loss is divided by the number of chunks, and the gradients add up, so one optimizer step still sees all 256 games.</span></li>
+    <li><span class="lref">198–199</span><span>Each step draws 256 games at random, with replacement, from the loaded games.</span></li>
+    <li><span class="lref">205–210</span><span>The shift from the figure: read <code>xc[:, :-1]</code>, score against <code>xc[:, 1:]</code>, flattened over all positions.</span></li>
+    <li><span class="lref">211–212</span><span>Clip the gradient norm to 1.0, then step.</span></li>
+    <li><span class="lref">200–215</span><span>Wait for the GPU before and after each step, so the time per step is honest; that is what Lesson 5’s throughput numbers come from. The first 10 steps are dropped from the average (line 219).</span></li>
+    <li><span class="lref">220–225</span><span>The final loss is the mean of the last 20 steps.</span></li>
+  </ul>
+  <!--CHART:lr-loss|The learning-rate schedule every model follows, and the logged training loss of one real zoo model, <code>othello_transformer_medium_synthetic_s0</code>. The loss starts near ln 61 ≈ 4.1, a uniform guess over the vocabulary, and settles around 2.47: next-move prediction stays uncertain because several moves are legal at almost every turn.-->
+  <div class="note">
+    <span class="label">A detail worth knowing</span>
+    <p>Because batches are drawn with replacement, a synthetic model draws about 63% of its 1.28 million games at least once, and about a quarter of them more than once. The comment in <code>run_matrix.py</code> (“so no game repeats within a run”) describes the intent of loading that many games, not exactly what sampling with replacement does. For the championship models, with only 110,005 games, every game is seen many times (Lesson 4).</p>
+  </div>
+</section>
+
+<section class="section" id="l6-eval">
+  <h3><span class="num">6.4</span>Evaluation: two numbers</h3>
+  <!--CODE:src/zoo/train.py:228:246-->
+  <ul class="walk">
+    <li><span class="lref">233–234</span><span>Use the same chunk size as training, so big models fit, and build the validation games with legal moves (Lesson 3).</span></li>
+    <li><span class="lref">238–243</span><span>Next-token accuracy: how often the top prediction is the move the game actually played next.</span></li>
+    <li><span class="lref">244</span><span>Legal move rate: how often the top prediction is any legal move. This is D1’s number, computed here on validation games.</span></li>
+  </ul>
+  <div class="prose">
+    <p>For the medium transformer trained on synthetic games with seed 0, next-token accuracy is 0.146 and the legal move rate 0.944. The gap is the point of the project: guessing the exact move is hard because random games pick among about 8.5 legal moves, while knowing which moves are legal is what a world model would give you. The legal move rate on these 1,000 validation games also decides whether the model is admitted to the study (Lesson 7).</p>
+  </div>
+</section>
+
+<section class="section" id="l6-save">
+  <h3><span class="num">6.5</span>What gets saved</h3>
+  <div class="table-scroll">
+    <table class="wide-table">
+      <thead><tr><th scope="col">File</th><th scope="col">What</th><th scope="col">In git?</th></tr></thead>
+      <tbody>
+        <tr><td><code>outputs/zoo/&lt;id&gt;/model.pt</code></td><td>The weights (<code>state_dict</code>), 2 to 100 MB</td><td>No: shared through S3</td></tr>
+        <tr><td><code>outputs/zoo/&lt;id&gt;/config.json</code></td><td>Every command-line setting of the run</td><td>No</td></tr>
+        <tr><td><code>outputs/zoo/&lt;id&gt;/results.json</code></td><td>Training, evaluation and throughput numbers</td><td>No</td></tr>
+        <tr><td><code>outputs/zoo/&lt;id&gt;/row.md</code></td><td>One markdown table row, for pasting into a pull request</td><td>No</td></tr>
+        <tr><td><code>results/zoo_training/&lt;id&gt;.json</code></td><td>The training record: <code>results.json</code> plus where the checkpoint is, its SHA-256 hash, the git commit, the machine and the time</td><td>Yes</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <!--CODE:src/zoo/train.py:342:360-->
+  <ul class="walk">
+    <li><span class="lref">345</span><span>A record is written only for a full-budget run on real data, so smoke tests and short throughput runs can never enter the zoo.</span></li>
+    <li><span class="lref">352–356</span><span>The SHA-256 hash of the checkpoint ties the record to one exact file. Lesson 7 shows how the registry checks it before a model is scored.</span></li>
+    <li><span class="lref">357–359</span><span>The record is small JSON and goes into git; the checkpoint stays out of it.</span></li>
+  </ul>
+</section>
+
+<!--QUIZ:6.6-->

@@ -1,0 +1,95 @@
+<header class="lesson-head">
+  <!--LESSON_HEAD-->
+  <p class="lede">Before any model was trained, the team wrote down every model and every evaluation the study would run. This lesson reads that plan: how it is generated, how models are named, what the scales and the training budget are, and what it all costs on one GPU.</p>
+  <p class="meta">About <!--MINUTES--> minutes · Files: <code>src/component/run_matrix.py</code>, <code>src/docs/models.csv</code>, <code>src/docs/run_matrix.csv</code>, <code>src/shellscripts/throughput.sh</code>, <code>src/docs/throughput.md</code></p>
+</header>
+
+<section class="section" id="l5-matrix">
+  <h3><span class="num">5.1</span>One script fixes the whole experiment</h3>
+  <div class="prose">
+    <p><code>run_matrix.py</code> multiplies five short lists together and writes the result to two CSV files: <code>models.csv</code>, one row per model, and <code>run_matrix.csv</code>, one row per (model, diagnostic) evaluation. Once these files were committed, rows could only ever be marked done or skipped, never added. That bounds the study before any compute is spent, and stops anyone from quietly adding a model after seeing results.</p>
+  </div>
+  <div class="factorial" role="img" aria-label="3 domains times 3 architectures times 3 scales times 3 distributions times 3 seeds equals 243 models; times 4 diagnostics equals 972 evaluations.">
+    <div class="axis-col"><span class="axis-name">Domain</span><span>othello</span><span>maps</span><span>interpreter</span></div>
+    <span class="op">×</span>
+    <div class="axis-col"><span class="axis-name">Architecture</span><span>transformer</span><span>lstm</span><span>mamba</span></div>
+    <span class="op">×</span>
+    <div class="axis-col"><span class="axis-name">Scale</span><span>small</span><span>medium</span><span>large</span></div>
+    <span class="op">×</span>
+    <div class="axis-col"><span class="axis-name">Distribution</span><span>3 per domain</span><span class="dim">othello: synthetic, championship, mixed</span></div>
+    <span class="op">×</span>
+    <div class="axis-col"><span class="axis-name">Seed</span><span>0</span><span>1</span><span>2</span></div>
+    <span class="op">=</span>
+    <div class="axis-col total"><span class="axis-name">Models</span><span class="big">243</span><span class="dim">81 per domain</span></div>
+    <span class="op">× 4 =</span>
+    <div class="axis-col total"><span class="axis-name">Evaluations</span><span class="big">972</span><span class="dim">D1 to D4 per model</span></div>
+  </div>
+  <!--CODE:src/component/run_matrix.py:35:64-->
+  <ul class="walk">
+    <li><span class="lref">35–39</span><span>The five lists. Navigation is called <code>maps</code> in the code.</span></li>
+    <li><span class="lref">45–49</span><span>What the scales mean. All three architectures use the same layers and width at each scale, so their parameter counts are comparable. Large matches Othello-GPT: 8 layers, 512 wide, 8 heads.</span></li>
+    <li><span class="lref">54–64</span><span>One training budget for every model, so scale is the only thing that changes between small, medium and large: 5,000 optimizer steps of 256 games each, 1.28 million games in all.</span></li>
+  </ul>
+</section>
+
+<section class="section" id="l5-names">
+  <h3><span class="num">5.2</span>Names that say everything</h3>
+  <div class="prose">
+    <p>Every file the project writes about a model is named after its <code>model_id</code>, built from the five axes in a fixed order. A diagnostic run adds the diagnostic to it.</p>
+  </div>
+  <div class="anatomy" role="img" aria-label="The model id othello_transformer_small_synthetic_s0 is made of domain othello, architecture transformer, scale small, distribution synthetic and seed 0. Adding _D1 gives the run id, and the D1 result is saved to results/D1_next_token/ under the model id.">
+    <div class="id-row">
+      <span class="part p-domain">othello<em>domain</em></span><span class="sep">_</span>
+      <span class="part p-arch">transformer<em>architecture</em></span><span class="sep">_</span>
+      <span class="part p-scale">small<em>scale</em></span><span class="sep">_</span>
+      <span class="part p-dist">synthetic<em>distribution</em></span><span class="sep">_</span>
+      <span class="part p-seed">s0<em>seed</em></span><span class="sep">_</span>
+      <span class="part p-diag">D1<em>run id adds the diagnostic</em></span>
+    </div>
+    <p class="id-paths"><code>outputs/zoo/othello_transformer_small_synthetic_s0/model.pt</code> · <code>results/zoo_training/othello_transformer_small_synthetic_s0.json</code> · <code>results/D1_next_token/othello_transformer_small_synthetic_s0.json</code></p>
+  </div>
+  <!--CODE:src/component/run_matrix.py:95:119-->
+  <ul class="walk">
+    <li><span class="lref">97–98</span><span>Loop over domains, then every combination of architecture, scale, the domain’s own three distributions, and seed.</span></li>
+    <li><span class="lref">99</span><span>The <code>model_id</code>: <code>{domain}_{arch}_{scale}_{distribution}_s{seed}</code>.</span></li>
+    <li><span class="lref">111</span><span><code>held_out</code>: <code>yes</code> for the interpreter domain (section 5.4).</span></li>
+    <li><span class="lref">113–115</span><span>Where <code>train.py</code> will write the model, and its status, <code>planned</code>. <code>eval_rows()</code> (lines 122–142) then writes four rows per model, one per diagnostic, each with the path of its result file.</span></li>
+  </ul>
+</section>
+
+<section class="section" id="l5-cost">
+  <h3><span class="num">5.3</span>What it costs: measured throughput</h3>
+  <div class="prose">
+    <p>The budget had to fit one A10G GPU per team member, so the team measured it. <code>throughput.sh</code> trains every architecture and scale for 300 timed steps, and <code>train.py</code> extrapolates the seconds per step to the full 5,000. The results are in <code>src/docs/throughput.md</code>, and this chart is drawn from that file.</p>
+  </div>
+  <!--CHART:throughput|Measured training time per model at the full budget (A10G, 2 October). Mamba runs in plain PyTorch through <code>mambapy</code>, because the faster <code>mamba_ssm</code> kernels would not compile on the course machines; Mamba large also has to split each batch of 256 games into chunks of 64 to fit in memory.-->
+  <div class="prose">
+    <p>One domain is 81 models, about 37 GPU hours of training; all three domains come to about 111. Mamba is 88% of that, and the 9 Mamba large models of one domain take about 22 hours on their own. The team kept the full matrix, including Mamba large, and split the Othello zoo across four machines (Lesson 7).</p>
+  </div>
+  <div class="note">
+    <span class="label">Why not train longer?</span>
+    <p>At this budget the large transformer reaches a legal move rate of 0.969 on validation games, where Othello-GPT, trained far longer, reaches 0.999. The preregistration keeps the budget anyway: four times the budget would cost about 150 GPU hours for Othello alone, and the study needs models of different quality, because rank correlations between diagnostics only mean something when the models differ.</p>
+  </div>
+</section>
+
+<section class="section" id="l5-heldout">
+  <h3><span class="num">5.4</span>The held-out domain</h3>
+  <!--CODE:src/component/run_matrix.py:74:92-->
+  <div class="prose">
+    <p>H4 asks whether the findings carry over to something the analysis never saw. The team decided on 5 October to hold out one whole domain, the interpreter: its models are trained and scored only after H1 to H3 are settled on Othello and navigation. No architecture is held out, because with only three families, holding one out would remove a third of the models from every H1–H3 analysis and leave only two families to explain disagreement with in H2.</p>
+  </div>
+</section>
+
+<section class="section" id="l5-run">
+  <h3><span class="num">5.5</span>Running it</h3>
+<pre class="plain"><code>python src/component/run_matrix.py
+<span class="c"># models.csv     : 243 models  by domain {'othello': 81, 'maps': 81, 'interpreter': 81} ...
+# run_matrix.csv : 972 evaluations (4 per model)</span>
+
+bash src/shellscripts/throughput.sh                <span class="c"># 300 timed steps per architecture and scale (GPU)</span></code></pre>
+  <div class="prose">
+    <p>The two CSV files are already committed and frozen; regenerating them gives the same rows. Their <code>status</code> column says <code>planned</code> for everything: progress is tracked by the files that exist (training records, results), not by editing the plan.</p>
+  </div>
+</section>
+
+<!--QUIZ:5.6-->

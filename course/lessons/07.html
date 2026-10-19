@@ -1,0 +1,95 @@
+<header class="lesson-head">
+  <!--LESSON_HEAD-->
+  <p class="lede">One model is one call to <code>train.py</code>. The Othello zoo is 81 of them, about 37 GPU hours, spread over four machines. This lesson covers the slice plan, the loop that trains a slice and survives restarts, the training record each model leaves behind, and the registry that turns those records into the list of models the study may use.</p>
+  <p class="meta">About <!--MINUTES--> minutes · Files: <code>src/docs/zoo_slices.csv</code>, <code>src/shellscripts/train_slice.sh</code>, <code>src/zoo/registry.py</code>, <code>src/docs/zoo_registry.csv</code></p>
+</header>
+
+<section class="section" id="l7-slices">
+  <h3><span class="num">7.1</span>Four machines, four slices</h3>
+  <div class="prose">
+    <p>Each team member has one g5.2xlarge instance with one A10G GPU. <code>zoo_slices.csv</code> assigns every Othello model to a slice, with its estimated minutes from the throughput table (Lesson 5), and the slices are balanced so that each machine finishes in about nine hours. The nine Mamba large models, about 2.4 hours each, are spread so that no machine gets more than three. Slice 0 holds the first four models, trained before the split to check the pipeline end to end.</p>
+  </div>
+  <!--HTML:slices-->
+  <div class="prose">
+    <p>Each row of the CSV also carries the model’s <code>micro_batch</code>: 64 for Mamba large, 0 (no chunking) for everything else.</p>
+  </div>
+</section>
+
+<section class="section" id="l7-loop">
+  <h3><span class="num">7.2</span>train_slice.sh: a loop that survives restarts</h3>
+  <div class="prose">
+    <p>A slice runs for hours, usually inside <code>tmux</code> so it outlives the SSH session. The script trains one model after another and is built so that the answer to any crash is “run the same command again”.</p>
+  </div>
+<pre class="plain"><code>bash src/shellscripts/train_slice.sh 4 --dry_run   <span class="c"># print the plan: one line per model with its command</span>
+bash src/shellscripts/train_slice.sh 4             <span class="c"># train it; models with a record are skipped</span></code></pre>
+  <!--CODE:src/shellscripts/train_slice.sh:49:76-->
+  <ul class="walk">
+    <li><span class="lref">50–51</span><span>Read <code>zoo_slices.csv</code> row by row and keep only this slice’s rows (the header row is skipped too).</span></li>
+    <li><span class="lref">53–58</span><span>If the model already has a training record, skip it. This one check makes the whole loop restartable: finished models are never trained twice.</span></li>
+    <li><span class="lref">59–60</span><span>The <code>train.py</code> command, always at the frozen budget: 5,000 steps, batch 256, the slice’s micro-batch.</span></li>
+    <li><span class="lref">66–67</span><span>Each model’s output goes to its own log, <code>outputs/zoo_logs/&lt;id&gt;.log</code>. Success needs both a clean exit and the record file on disk.</span></li>
+    <li><span class="lref">68–70</span><span>Pull the legal move rate out of the log for the progress line.</span></li>
+    <li><span class="lref">71–75</span><span>A failure is reported with the last five log lines, and the loop moves on to the next model rather than stopping the slice.</span></li>
+  </ul>
+  <div class="prose">
+    <p>At the end the script prints a summary, exits with an error if any model failed, and reminds the trainer to commit only the new records. Before the loop it also warns when <code>src/</code> has uncommitted changes, because every zoo model should be trained from the same clean code.</p>
+  </div>
+</section>
+
+<section class="section" id="l7-record">
+  <h3><span class="num">7.3</span>The training record</h3>
+  <div class="prose">
+    <p>Each finished model leaves one small JSON file in <code>results/zoo_training/</code>. It is the source of truth for that model: everything later reads it, and nothing edits it. Here is the record of the first zoo model, shortened:</p>
+  </div>
+<pre class="plain"><code>{
+  "model_id": "othello_transformer_small_synthetic_s0",
+  "arch": "transformer", "scale": "small", "n_params": 816573,
+  "train": {"steps_run": 5000, "final_loss": 2.6408, "sec_per_step": 0.0188, "wall_sec": 94.9},
+  "eval":  {"next_token_acc": 0.1310, "legal_move_rate": 0.8372, "n_eval_games": 1000, "illegal_games_dropped": 0},
+  "throughput": {"min_per_model_full_budget": 1.56, "micro_batch": 0, ...},
+  "config": {"distribution": "synthetic", "seed": 0, "lr": 0.0003, "steps": 5000, "batch": 256, ...},
+  "domain": "othello", "distribution": "synthetic", "seed": 0,
+  "checkpoint": "outputs/zoo/othello_transformer_small_synthetic_s0/model.pt",
+  "checkpoint_sha256": "0690169b8f44b5235e0098de95bf27d3b45f845c3a28270a98a8575f03b27998",
+  "git_commit": "10ecd35", "host": "…", "time_utc": "2026-10-06T21:02:28Z"
+}</code></pre>
+  <div class="prose">
+    <p>Because every member trains a different slice and commits only their own records, four people never edit the same file, and pull requests never conflict.</p>
+  </div>
+</section>
+
+<section class="section" id="l7-registry">
+  <h3><span class="num">7.4</span>registry.py: from records to the zoo</h3>
+  <div class="prose">
+    <p>The registry turns the records into one table, <code>src/docs/zoo_registry.csv</code>, and applies the admission rule: a model enters the H1–H3 analysis only if its legal move rate on the 1,000 validation games is at least 0.50. The rule was fixed in the preregistration from training records alone, before any diagnostic score existed. Why 0.50: an untrained model scores about 0.15, because roughly 9 of the 60 squares are legal at a typical position, and the first trained models scored 0.57 to 0.97. A model below 0.50 has not learned the task, so a world-model test would have nothing to measure in it.</p>
+  </div>
+  <!--CODE:src/zoo/registry.py:48:69-->
+  <ul class="walk">
+    <li><span class="lref">48–51</span><span>The admission rule. With no threshold set the answer is <code>tbd</code>, which is how the column read before the preregistration fixed 0.50.</span></li>
+    <li><span class="lref">54–69</span><span>One record becomes one registry row: the model fields, the final loss, the validation legal move rate and next-token accuracy, training minutes, where it ran, the checkpoint hash and <code>admitted</code>.</span></li>
+  </ul>
+  <!--CODE:src/zoo/registry.py:79:90-->
+  <ul class="walk">
+    <li><span class="lref">83–89</span><span>Every record must belong to a model in <code>models.csv</code>, or the build stops: the zoo is exactly the run matrix, never more.</span></li>
+    <li><span class="lref">90</span><span>Rows come out in <code>models.csv</code> order, so the table never reshuffles as records arrive.</span></li>
+  </ul>
+  <!--CODE:src/zoo/registry.py:104:121-->
+  <ul class="walk">
+    <li><span class="lref">109–111</span><span>No record, no model: a checkpoint that was never recorded cannot be loaded through the registry.</span></li>
+    <li><span class="lref">113–116</span><span>A record whose checkpoint is not on this machine fails with a message naming the machine it was trained on: copy it from there, or from the team’s S3 bucket.</span></li>
+    <li><span class="lref">117–120</span><span>The SHA-256 of the file must match the record. A checkpoint that was retrained, copied wrongly or swapped is refused instead of being silently scored.</span></li>
+  </ul>
+<pre class="plain"><code>python src/zoo/registry.py                    <span class="c"># rebuild src/docs/zoo_registry.csv and print each architecture and scale's range</span>
+python src/zoo/registry.py --import_outputs   <span class="c"># first write records for older full-budget runs that have none</span></code></pre>
+</section>
+
+<section class="section" id="l7-zoo">
+  <h3><span class="num">7.5</span>The zoo so far</h3>
+  <!--CHART:legal-rates|Validation legal move rate of every trained Othello model, one dot per model, grouped by architecture and scale and coloured by training distribution; the three seeds of a configuration sit side by side. Drawn from the training records in <code>results/zoo_training/</code> when this page was built.-->
+  <div class="prose">
+    <p><!--STAT:zoo-status--> Every one clears the admission line (lowest: <!--STAT:zoo-min-->), so the H1–H3 analysis can use them all. Three patterns stand out. The LSTMs are the weakest at every scale (<!--STAT:lstm-min--> to <!--STAT:lstm-max-->), while the transformers (<!--STAT:transformer-min--> to <!--STAT:transformer-max-->) and the Mambas (<!--STAT:mamba-min--> to <!--STAT:mamba-max-->) sit close together. Every architecture improves with scale. And the seed and the training distribution move a model much less than its architecture and scale do.</p>
+    <p>That spread is what the study wants: rank correlations between diagnostics only mean something when the models really differ. It also sets up the preregistration’s worry in Lesson 8: if all four diagnostics simply follow this legal move rate, they could agree without measuring the same thing.</p>
+  </div>
+</section>
+
+<!--QUIZ:7.6-->

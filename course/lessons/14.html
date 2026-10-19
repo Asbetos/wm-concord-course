@@ -1,0 +1,120 @@
+<header class="lesson-head">
+  <!--LESSON_HEAD-->
+  <p class="lede">H3 asks which diagnostic best predicts when a model breaks on situations that are related to its training but shifted. Something has to define “breaks”, and it had to be defined before any diagnostic score existed. That is the fragility suite: frozen on 6 October with the tag <code>fragility-v1</code>.</p>
+  <p class="meta">About <!--MINUTES--> minutes · Files: <code>src/fragility/othello.py</code>, <code>src/docs/fragility_suite.md</code>, <code>src/tests/test_othello_fragility.py</code></p>
+</header>
+
+<section class="section" id="l14-idea">
+  <h3><span class="num">14.1</span>Same rules, shifted situations</h3>
+  <div class="prose">
+    <p>Every variant keeps the Othello rules exactly as they are and changes only <em>which</em> positions the model is asked about, so the right answer always comes from <code>othello.py</code>. Nothing in the suite retrains or adapts the model. The proposal had listed “altered legal move rules” too, but a model can only follow a changed rule after being adapted to it, and adaptation is what D3 measures; using it here would make H3 partly “does D3 predict D3”. The team dropped it on 5 October, before freezing the suite.</p>
+  </div>
+  <div class="table-scroll">
+    <table class="wide-table">
+      <thead><tr><th scope="col">Variant</th><th scope="col">What changes</th><th scope="col">Why it is a shift</th><th scope="col">Number</th></tr></thead>
+      <tbody>
+        <tr><td>In distribution</td><td>Nothing: 1,000 test games of the model’s own distribution</td><td>The reference every drop is measured from</td><td>legal move rate</td></tr>
+        <tr><td>Cross distribution</td><td>Test games of the other distribution (synthetic ↔ championship; a mixed model is tested on both)</td><td>Random play and expert play reach different boards</td><td>legal move rate</td></tr>
+        <tr><td>After a pass</td><td>Only positions where the opponent has no move and the same player moves again</td><td>Rare, and the shortcut “players alternate” stops working</td><td>legal move rate at those positions</td></tr>
+        <tr><td>Symmetry</td><td>The test games rotated by 180° or reflected along either diagonal</td><td>The same games with the squares renamed; human games are all recorded in one orientation</td><td>legal move rate, per symmetry</td></tr>
+        <tr><td>Detour</td><td>The model plays itself; with probability p its move is replaced by another legal one</td><td>Pushes the game off the model’s preferred line, as in Vafa et al. (2024)</td><td>share of games finished with no illegal proposal</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="section" id="l14-sym">
+  <h3><span class="num">14.2</span>Symmetry: the same game, relabelled</h3>
+  <figure>
+    <div class="fig-box"><!--FIG:symmetry--></div>
+    <ul class="legend" aria-label="Markers"><li><span class="sw" aria-hidden="true"><i class="sqr"></i></span>a start square whose colour changed</li></ul>
+    <figcaption><b><!--FIGNUM--></b> The opening D3 C3 C4 E3 under the three symmetries the suite uses, replayed by the project’s own rules: every move stays legal and the same player makes it. A 90° rotation (or a left-to-right mirror) would swap the colours of the four start discs, turning Black’s first moves into White’s, so it is not used.</figcaption>
+  </figure>
+  <!--CODE:src/fragility/othello.py:97:119-->
+  <div class="prose">
+    <p>For a random-game model this is barely a shift, because random games open in all four directions equally. For a championship model it is a real one: the archive records every game in one orientation, so all 110,005 of its training games open with F5 (Lesson 4), and a rotated game starts with a move it has never seen first.</p>
+  </div>
+</section>
+
+<section class="section" id="l14-pass">
+  <h3><span class="num">14.3</span>After a pass</h3>
+  <!--CODE:src/fragility/othello.py:126:132-->
+  <div class="prose">
+    <p>A position counts when the next recorded move is made by the same player who made this one: the opponent had to pass. A model that only learned “the players take turns” proposes a move for the wrong player there. Passes are not that rare (about a third of random games and 58% of championship games contain one), but they are a small share of positions.</p>
+  </div>
+</section>
+
+<section class="section" id="l14-detour">
+  <h3><span class="num">14.4</span>Detours: pushing the model off its line</h3>
+  <figure>
+    <div class="fig-box">
+      <svg viewBox="0 0 960 236" role="img" aria-label="A self-play loop. The model reads the game so far and proposes its top move. The rules check it: if it is illegal, the game fails. If it is legal, with probability p it is swapped for another legal move, either a random one or the one the model thinks least likely. The move is played and the loop repeats. The completion rate is the share of 500 games finished with no illegal proposal.">
+        <defs>
+          <marker id="l14-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker>
+        </defs>
+        <path class="wire" d="M220,96 H258" marker-end="url(#l14-arrow)"/>
+        <path class="wire" d="M430,96 H468" marker-end="url(#l14-arrow)"/>
+        <text class="t-label" x="449" y="88" text-anchor="middle">yes</text>
+        <path class="wire" d="M345,131 V158" marker-end="url(#l14-arrow)"/>
+        <text class="t-label" x="355" y="150">no</text>
+        <path class="wire" d="M690,96 H728" marker-end="url(#l14-arrow)"/>
+        <path class="wire" d="M830,61 V34 H120 V59" marker-end="url(#l14-arrow)"/>
+        <text class="t-label" x="475" y="27" text-anchor="middle">next turn</text>
+        <rect class="box" x="20" y="61" width="200" height="70" rx="8"/>
+        <text class="t-title-sm" x="36" y="86">the model proposes</text>
+        <text class="t-muted" x="36" y="108">its top move for this game</text>
+        <rect class="box-truth" x="260" y="61" width="170" height="70" rx="8"/>
+        <text class="t-title-sm" x="276" y="86">is it legal?</text>
+        <text class="t-muted" x="276" y="108">checked by the rules</text>
+        <rect class="box-warn" x="260" y="160" width="170" height="44" rx="8"/>
+        <text class="t-strong" x="345" y="187" text-anchor="middle">the game fails</text>
+        <rect class="box" x="470" y="61" width="220" height="70" rx="8"/>
+        <text class="t-title-sm" x="486" y="86">with probability p, swap it</text>
+        <text class="t-muted" x="486" y="108">random or least-likely legal move</text>
+        <rect class="box" x="730" y="61" width="200" height="70" rx="8"/>
+        <text class="t-title-sm" x="746" y="86">play the move</text>
+        <text class="t-muted" x="746" y="108">board and tokens update</text>
+        <text class="t-body" x="470" y="178">completion rate = games that reach the end, or 59 moves,</text>
+        <text class="t-body" x="470" y="197">without one illegal proposal (500 games per setting)</text>
+      </svg>
+    </div>
+    <figcaption><b><!--FIGNUM--></b> One detour rollout. Settings: p = 0 (the undisturbed reference), 0.1 and 0.5, each with random and adversarial swaps. The adversarial swap plays the legal move the model rates least likely, steering into positions it would never reach by itself.</figcaption>
+  </figure>
+  <!--CODE:src/fragility/othello.py:190:219-->
+  <ul class="walk">
+    <li><span class="lref">194–195</span><span>One forward pass for every game still alive, reading only the last position’s probabilities.</span></li>
+    <li><span class="lref">197–203</span><span>Passes and game ends follow the rules: no legal move means a pass, and if neither player can move the game is over, and counts as completed.</span></li>
+    <li><span class="lref">205–209</span><span>An illegal top move ends that game as a failure.</span></li>
+    <li><span class="lref">212–218</span><span>With probability p, and only when there is a choice, the move is swapped: for a random other legal move, or for the one the model gives the lowest probability.</span></li>
+  </ul>
+</section>
+
+<section class="section" id="l14-number">
+  <h3><span class="num">14.5</span>One number per model</h3>
+  <!--CODE:src/fragility/othello.py:271:292-->
+  <ul class="walk">
+    <li><span class="lref">271</span><span>Every static variant’s drop: the in-distribution legal move rate minus the variant’s.</span></li>
+    <li><span class="lref">279–283</span><span>Every detour drop: the undisturbed completion rate (p = 0) minus the completion rate with detours, for each mode and each p.</span></li>
+    <li><span class="lref">291</span><span><code>fragility</code> = the mean of all the drops. Higher means more fragile. The drops are kept one by one too, so H2 can ask which shifts each diagnostic sees.</span></li>
+  </ul>
+  <div class="note">
+    <span class="label">A drop needs something to drop from</span>
+    <p>An untrained model scores a fragility near zero (0.02 to 0.03 in a smoke run): it is equally bad everywhere and has nothing to lose. That is why the in-distribution rate is always reported next to <code>fragility</code>, why H3 uses only admitted models, and why Amendment 1 divides fragility by the in-distribution rate (relative fragility) before asking which diagnostic predicts it (Lesson 8).</p>
+  </div>
+</section>
+
+<section class="section" id="l14-freeze">
+  <h3><span class="num">14.6</span>Frozen, and how to run it</h3>
+  <div class="prose">
+    <p>Everything the suite does is set by one dictionary, <code>SUITE</code> (1,000 test games per variant, data seed 0, the symmetries, the detour settings), and <code>suite_hash()</code> hashes it together with the version name. The freeze test in Lesson 8 fails if the hash ever differs from <code>644671bfb322</code>. A different suite has to be a new version with a new tag, and every result file records which suite and hash produced it.</p>
+  </div>
+<pre class="plain"><code>python src/fragility/othello.py --model outputs/zoo/othello_transformer_small_synthetic_s0/model.pt \
+    --arch transformer --scale small --train_distribution synthetic --seed 0
+<span class="c"># writes results/fragility/othello_transformer_small_synthetic_s0.json:
+#   in_distribution_legal_rate, legal_rate per variant, detour results, drops, fragility, suite_version, suite_hash</span></code></pre>
+  <div class="prose">
+    <p>The tests check the suite against two models whose answers are known: a perfect world model (replays the rules, proposes only legal moves) must score zero on every variant, and a broken one (always the same square) must fail. They also check that each symmetry keeps the start board, that the after-pass positions are real passes, and that the same seed gives the same detours.</p>
+  </div>
+</section>
+
+<!--QUIZ:14.7-->

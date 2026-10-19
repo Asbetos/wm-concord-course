@@ -1,0 +1,60 @@
+"""Course outline: one entry per lesson, in reading order.
+
+The course map, the lesson eyebrows and the "next lesson" cards are all generated from this list, so a
+title or goal changes in one place. The lesson body lives in lessons/NN.html.
+"""
+
+PARTS = {
+    "A": "Orientation",
+    "B": "Building the zoo",
+    "C": "Measuring world models",
+    "D": "Judging the diagnostics",
+}
+
+LESSONS = [
+    dict(n=1, part="A", minutes=12, title="The big picture",
+         goal="What WM-Concord tests, the four diagnostics, and which script runs at each stage.",
+         files="README.md · proposal.md · preregistration.md"),
+    dict(n=2, part="A", minutes=10, title="How Othello is played",
+         goal="The board, the opening, how a move flips discs, passing, and how a game ends. Play it yourself.",
+         files="no code"),
+    dict(n=3, part="B", minutes=20, title="The rules engine",
+         goal="Squares and tokens, flips, replay(), and build(), which hands every later stage its arrays.",
+         files="domains/othello.py, part 1"),
+    dict(n=4, part="B", minutes=18, title="The game data",
+         goal="Synthetic, championship and mixed games, the two file formats, and the train / val / test rules.",
+         files="domains/othello.py, part 2 · fetch_othello_data.sh"),
+    dict(n=5, part="B", minutes=12, title="Planning the experiment",
+         goal="The run matrix, model names, scales, the fixed training budget and what it costs.",
+         files="component/run_matrix.py · models.csv · throughput.sh"),
+    dict(n=6, part="B", minutes=20, title="Training one model",
+         goal="Transformer, LSTM and Mamba behind one shape; the training loop; what gets saved.",
+         files="zoo/train.py"),
+    dict(n=7, part="B", minutes=14, title="Training the whole zoo",
+         goal="Slices across four machines, training records, the registry and the admission rule.",
+         files="train_slice.sh · zoo_slices.csv · zoo/registry.py"),
+    dict(n=8, part="C", minutes=15, title="Rules before results",
+         goal="The preregistration, its amendments, the decision rules for H1–H4, and how git tags gate the code.",
+         files="preregistration.md · PREREG_TAG · freeze test"),
+    dict(n=9, part="C", minutes=16, title="The shared plumbing",
+         goal="One model interface, one result format, one master table.",
+         files="diagnostics/interface.py · component/results.py"),
+    dict(n=10, part="C", minutes=10, title="D1 · Next-token validity",
+         goal="The baseline test: is the model’s top move legal?",
+         files="d1/next_token.py"),
+    dict(n=11, part="C", minutes=22, title="D2 · State equivalence",
+         goal="Compression and distinction errors after Myhill–Nerode, estimated from sampled pairs of histories.",
+         files="d2/state_equiv.py · d2/toy_check.py"),
+    dict(n=12, part="C", minutes=20, title="D3 · Inductive bias",
+         goal="Fine-tuning a copy on 64 examples, the random-weights twin, and the symbolic-regression arm.",
+         files="d3/inductive_bias.py · d3/toy_probe.py"),
+    dict(n=13, part="C", minutes=24, title="D4 · Representation probing",
+         goal="Probes, the control task, the causal edit, and the reproduction gate.",
+         files="d4/representation_probe.py · reproduce_nanda_probe.py"),
+    dict(n=14, part="D", minutes=15, title="The fragility suite",
+         goal="The frozen outcome H3 predicts: shifted positions, board symmetries and forced detours.",
+         files="fragility/othello.py"),
+    dict(n=15, part="D", minutes=16, title="From scores to answers",
+         goal="The master table, the H1–H4 analysis plan, the Streamlit demo, tests and CI.",
+         files="results.py · demo/app.py · src/tests/ · tests.yml"),
+]

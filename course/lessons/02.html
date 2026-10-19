@@ -1,0 +1,65 @@
+<header class="lesson-head">
+  <!--LESSON_HEAD-->
+  <p class="lede">Everything about the game you need to follow the code: the board, the opening, how a move flips discs, passing, and how a game ends. Then play a few moves yourself.</p>
+  <p class="meta">About <!--MINUTES--> minutes · No code</p>
+</header>
+
+<section class="section" id="l2-board">
+  <h3><span class="num">2.1</span>The board and the opening</h3>
+  <div class="prose">
+    <p>Othello is played by two players, Black and White, on an 8 by 8 board. All the discs are the same: black on one side, white on the other. Columns are lettered A to H and rows numbered 1 to 8, so every square has a name such as D3. In this repo row 1 is at the top, so A1 is the top-left corner (square 0 in the code) and H8 the bottom-right (square 63).</p>
+    <p>Every game starts from the same four discs in the centre: White on D4 and E5, Black on E4 and D5. Black moves first.</p>
+  </div>
+  <figure>
+    <div class="fig-box narrow"><!--FIG:start--></div>
+    <figcaption><b><!--FIGNUM--></b> The start position. The dots mark Black’s four legal first moves: D3, C4, F5 and E6. Every game in the data starts here.</figcaption>
+  </figure>
+</section>
+
+<section class="section" id="l2-move">
+  <h3><span class="num">2.2</span>A move: trap and flip</h3>
+  <div class="prose">
+    <p>A move puts one disc, your colour up, on an empty square. It is legal only if it <strong>traps</strong> at least one opponent disc: in a straight line from the new disc (across, up or down, or diagonal) there must be one or more opponent discs and then one of your own. Every trapped disc flips to your colour. If the new disc traps lines in several directions, all of them flip.</p>
+    <p>The four moves below are the opening used throughout this course.</p>
+  </div>
+  <figure>
+    <div class="fig-box"><!--FIG:filmstrip--></div>
+    <ul class="legend" aria-label="Markers">
+      <li><span class="sw" aria-hidden="true"><i class="ring"></i></span>disc that just flipped</li>
+      <li><span class="sw" aria-hidden="true"><i class="dot"></i></span>disc just played</li>
+    </ul>
+    <figcaption><b><!--FIGNUM--></b> D3, C3, C4, E3. The disc on D4 changes colour three times in three moves. White’s E3 flips in two directions at once: D3, trapped against White’s C3, and E4, trapped against White’s E5.</figcaption>
+  </figure>
+</section>
+
+<section class="section" id="l2-end">
+  <h3><span class="num">2.3</span>Passing and the end of the game</h3>
+  <div class="prose">
+    <p>If the player to move has no legal move, they <strong>pass</strong> and the other player moves again. The game ends when neither player can move, almost always because all 64 squares are full after 60 moves. The player with more discs wins.</p>
+    <p>In the project’s test data, 98.8% of the random (synthetic) games and 96% of the championship games run the full 60 moves. Passes are not rare: about a third of the random games and 58% of the championship games contain at least one, and in random games the pass often comes just before the final move. A position offers about 8.5 legal moves on average.</p>
+  </div>
+  <div class="note">
+    <span class="label">Why passes matter to the code</span>
+    <p>The game files store only the squares played, never the passes. So when one player moves twice in a row, the code has to work out that the other player passed. <a href="#lesson-3">Lesson 3</a> shows how <code>replay()</code> does it.</p>
+  </div>
+</section>
+
+<section class="section" id="l2-play">
+  <h3><span class="num">2.4</span>Try it</h3>
+  <div class="prose">
+    <p>The dots always show the legal moves for whoever is to move. Point at a dot to see which discs it would flip, then click to play it. <strong>Random move</strong> picks uniformly among the legal moves, which is exactly how the synthetic training games were made.</p>
+  </div>
+  <div class="ob" data-board="l2" data-mode="play" aria-label="Playable Othello board"></div>
+</section>
+
+<section class="section" id="l2-why">
+  <h3><span class="num">2.5</span>Why Othello suits this project</h3>
+  <ul class="points">
+    <li><span class="p-name">The truth is exact.</span><span>The rules are fixed and nothing is random, so a move list determines the board completely. That gives every test its answer key.</span></li>
+    <li><span class="p-name">The board is hidden inside the move list.</span><span>Which squares are occupied is easy: discs are never removed, so a square stays occupied once it has been played. Whose disc sits there is hard, because it depends on every flip since. This is why the project’s tests ask about ownership, and why D4 reports an occupancy-only baseline.</span></li>
+    <li><span class="p-name">Mine and theirs.</span><span>The code describes each board two ways: black / white, and mine / theirs relative to the player who just moved. Nanda et al. (2023) found Othello-GPT stores the board the second way: a linear probe reads mine / theirs at about 99%, but black / white at only about 75%. The team reproduced this before building on it (Lesson 13).</span></li>
+    <li><span class="p-name">Strategy doesn’t matter, but it shapes the data.</span><span>The models only learn which moves are legal, not how to win. Championship players do try to win, so their games look different from random ones, and that difference is one of the shifts the fragility suite tests (Lessons 4 and 14).</span></li>
+  </ul>
+</section>
+
+<!--QUIZ:2.6-->

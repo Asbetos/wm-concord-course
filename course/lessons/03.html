@@ -1,0 +1,136 @@
+<header class="lesson-head">
+  <!--LESSON_HEAD-->
+  <p class="lede">How <code>src/domains/othello.py</code> turns a move list into the truth: squares and tokens, the functions that are the rules, <code>replay()</code> for whole games, and <code>build()</code>, which hands every later stage its arrays. The data-loading half of the file is Lesson 4.</p>
+  <p class="meta">About <!--MINUTES--> minutes · File: <code>src/domains/othello.py</code>, lines 47–163 and 288–369</p>
+</header>
+
+<section class="section" id="l3-callers">
+  <h3><span class="num">3.1</span>One file, many callers</h3>
+  <div class="prose">
+    <p>The file does three jobs: the rules (this lesson), loading game data (Lesson 4), and turning games into arrays (this lesson). Nothing else in the repo implements Othello, so a bug fixed here is fixed everywhere, and all four tests share one answer key.</p>
+  </div>
+  <div class="table-scroll">
+    <table class="fn-table">
+      <thead><tr><th scope="col">Function</th><th scope="col">Returns</th><th scope="col">Called from outside the file by</th></tr></thead>
+      <tbody>
+        <tr><td><code>start_board()</code></td><td>The opening board</td><td>Fragility suite (self-play)</td></tr>
+        <tr><td><code>flips_for(board, sq, player)</code></td><td>The squares that would flip; <code>[]</code> means illegal</td><td>Fragility suite; D2 (who moves next)</td></tr>
+        <tr><td><code>legal_moves(board, player)</code></td><td>Every legal square for one player</td><td>Fragility suite (self-play)</td></tr>
+        <tr><td><code>legal_next(board, mover)</code></td><td>Legal moves after <code>mover</code> moved, passes included</td><td>D4 causal check; demo</td></tr>
+        <tr><td><code>replay(moves)</code></td><td>Board and mover after every move, or <code>None</code></td><td>Tests (inside the file: <code>build()</code>)</td></tr>
+        <tr><td><code>play_random_game(rng)</code></td><td>One random legal game</td><td><code>train.py</code> smoke test (<code>--synthetic</code>)</td></tr>
+        <tr><td><code>to_tokens(games)</code></td><td>Tokens and mask, with no replay</td><td><code>train.py</code> training batches</td></tr>
+        <tr><td><code>build(games, legal)</code></td><td>Tokens, masks, boards, labels, legal moves</td><td><code>train.py</code>, D1–D4, fragility, <code>interface_check.py</code>, demo</td></tr>
+        <tr><td><code>legal_rate(model, data, …)</code></td><td>Share of top moves that are legal</td><td><code>train.py</code>, D1, <code>interface_check.py</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="section" id="l3-tokens">
+  <h3><span class="num">3.2</span>Squares and tokens</h3>
+  <!--CODE:src/domains/othello.py:51:61-->
+  <ul class="walk">
+    <li><span class="lref">51–53</span><span>The board is a NumPy array of 64 small integers: 0 empty, 1 black, 2 white. Square <code>s</code> sits at row <code>s // 8</code>, column <code>s % 8</code>.</span></li>
+    <li><span class="lref">54</span><span>The 8 directions a line can run in, as (row step, column step).</span></li>
+    <li><span class="lref">55–56</span><span>The four centre squares start occupied, so only 60 squares can ever be played.</span></li>
+    <li><span class="lref">57–58</span><span>Two lookup tables, square → token and back. Tokens number the 60 playable squares 1 to 60, in square order.</span></li>
+    <li><span class="lref">59–61</span><span>61 tokens in all, because 0 is padding. A game has at most 60 moves, and models read at most 59.</span></li>
+  </ul>
+  <figure>
+    <div class="fig-box narrow"><!--FIG:tokenmap--></div>
+    <figcaption><b><!--FIGNUM--></b> Every square’s index in the code (small, top left) and its token (large). The four start squares have no token. Highlighted: the opening D3, C3, C4, E3, which the model reads as <code>20 19 27 21</code>. Using the same vocabulary as Othello-GPT means the reference models read exactly the same inputs as the zoo.</figcaption>
+  </figure>
+</section>
+
+<section class="section" id="l3-rules">
+  <h3><span class="num">3.3</span>The rules in three functions</h3>
+  <div class="prose">
+    <p>Lesson 2’s rule, “trap at least one opponent disc in a straight line”, is <code>flips_for()</code>. The other two functions are built on it. (<code>start_board()</code>, just above, places the four opening discs.)</p>
+  </div>
+  <!--CODE:src/domains/othello.py:88:113-->
+  <ul class="walk">
+    <li><span class="lref">90–91</span><span>A square that is already taken can never be played.</span></li>
+    <li><span class="lref">92–94</span><span>Set up: who the opponent is, and the square’s row and column.</span></li>
+    <li><span class="lref">95–99</span><span>For each direction, step away from the square while the discs belong to the opponent, collecting them in <code>line</code>.</span></li>
+    <li><span class="lref">100–101</span><span>If the walk stopped on the player’s own disc (and is still on the board), the whole line is trapped: add it to the flips.</span></li>
+    <li><span class="lref">105–107</span><span><code>legal_moves()</code>: every playable square where <code>flips_for()</code> is not empty.</span></li>
+    <li><span class="lref">110–113</span><span><code>legal_next()</code>: after <code>mover</code> moved, the other player goes next if they can; if not, they pass and <code>mover</code> goes again; an empty list means the game is over. The pass rule is the single <code>or</code> on line 113.</span></li>
+  </ul>
+  <figure>
+    <div class="fig-box"><!--FIG:rays--></div>
+    <figcaption><b><!--FIGNUM--></b> <code>flips_for()</code> at work: White considers E3 after D3 C3 C4 (the dashed disc). It walks all 8 directions. Two walks end on a white disc, so D3 and E4 flip; one walk ends on the empty C5, so D4 stays; five walks hit an empty square at once. The function returns <code>[19, 28]</code>, the indices of D3 and E4.</figcaption>
+  </figure>
+</section>
+
+<section class="section" id="l3-replay">
+  <h3><span class="num">3.4</span>replay(): whole games, passes included</h3>
+  <div class="prose">
+    <p>The data stores each game as the squares played and nothing else. <code>replay()</code> rebuilds the board after every move, and works out the passes the files never record.</p>
+  </div>
+  <!--CODE:src/domains/othello.py:116:135-->
+  <ul class="walk">
+    <li><span class="lref">120–121</span><span>Start from the opening with Black to move, and collect a board and a mover per move.</span></li>
+    <li><span class="lref">124–127</span><span>If the player to move cannot make the recorded move, that player must have passed: switch players and try again.</span></li>
+    <li><span class="lref">128–129</span><span>If neither player can make it, the record is broken: return <code>None</code>. Callers drop such games (the count is expected to be 0, and so far it always is).</span></li>
+    <li><span class="lref">130–134</span><span>Flip the trapped discs, place the new one, remember the board and the mover, hand the turn over.</span></li>
+    <li><span class="lref">135</span><span>Return the boards, shape (T, 64), and the movers, shape (T,).</span></li>
+  </ul>
+  <div class="note">
+    <span class="label">The same rules, run forwards</span>
+    <p><code>play_random_game()</code> (lines 138–157) plays a game instead of replaying one: at each turn it picks a legal move uniformly at random, passes when it must, and stops when neither player can move. The tests use it to make games anywhere, without the data; the board in Lesson 2 does the same when you press Random move.</p>
+  </div>
+</section>
+
+<section class="section" id="l3-build">
+  <h3><span class="num">3.5</span>build(): one game in, six arrays out</h3>
+  <div class="prose">
+    <p><code>build()</code> is the function nearly every later stage calls. It replays a batch of games and lays the truth out as arrays, one row per game and one column per position.</p>
+  </div>
+  <!--CODE:src/domains/othello.py:321:345-->
+  <ul class="walk">
+    <li><span class="lref">322</span><span>Strip the −1 padding and keep the first 59 moves (<code>N_CTX</code>). A 60th move never reaches the arrays.</span></li>
+    <li><span class="lref">323–326</span><span>Replay the game; a game that fails to replay is marked and dropped.</span></li>
+    <li><span class="lref">329–330</span><span>Tokens, and the black / white board after every move.</span></li>
+    <li><span class="lref">331–333</span><span>Mine / theirs: 1 where a square holds the mover’s colour, 2 where it holds the other colour. <code>movers[:, None]</code> lines up each position’s mover with its 64 squares.</span></li>
+    <li><span class="lref">337–340</span><span>Only with <code>legal=True</code>: mark the legal next moves after every position. This is the slow part, a legal-move search per position, so it is off unless asked for.</span></li>
+    <li><span class="lref">341–345</span><span>Return the arrays for the games that replayed cleanly, and how many were dropped.</span></li>
+  </ul>
+  <h4>The arrays</h4>
+  <div class="table-scroll">
+    <table class="arr-table">
+      <thead><tr><th scope="col">Key</th><th scope="col">Shape</th><th scope="col">What it holds</th><th scope="col">Used by</th></tr></thead>
+      <tbody>
+        <tr><td><code>tokens</code></td><td class="num">(G, 59) int64</td><td>The moves as tokens; 0 = padding</td><td>Every model input</td></tr>
+        <tr><td><code>mask</code></td><td class="num">(G, 59) bool</td><td>True where a real move is</td><td>Every test</td></tr>
+        <tr><td><code>black_white</code></td><td class="num">(G, 59, 64) int8</td><td>Board after move t: 0 empty, 1 black, 2 white</td><td>D2 (the true state), D4 causal check, demo</td></tr>
+        <tr><td><code>mine_theirs</code></td><td class="num">(G, 59, 64) int8</td><td>The same board, 1 = mover’s disc, 2 = opponent’s</td><td>D3 task labels, D4 probe labels</td></tr>
+        <tr><td><code>movers</code></td><td class="num">(G, 59) int8</td><td>Who made move t: 1 black, 2 white</td><td>D2, D4, fragility (after-pass positions)</td></tr>
+        <tr><td><code>legal_next</code></td><td class="num">(G, 59, 61) bool</td><td>Which tokens are legal after move t (only with <code>legal=True</code>)</td><td>D1, D2, fragility, <code>train.py</code> check</td></tr>
+        <tr><td><code>n_illegal_games</code></td><td class="num">int</td><td>Games dropped because they failed to replay</td><td>Reported in results</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <h4>The four-move example, as build() sees it</h4>
+  <!--HTML:build-example-->
+  <div class="prose">
+    <p>Read row t = 0: the model has seen token 20 (D3), Black made that move, and the legal answers are tokens 19, 21 and 33 (C3, E3, C5). That row is exactly what D1 checks a prediction against. Now play your own game and watch the arrays change.</p>
+  </div>
+  <div class="ob" data-board="l3" data-mode="code" aria-label="Othello board showing build() arrays"></div>
+</section>
+
+<section class="section" id="l3-legal-rate">
+  <h3><span class="num">3.6</span>legal_rate(): the number behind D1</h3>
+  <!--CODE:src/domains/othello.py:352:369-->
+  <ul class="walk">
+    <li><span class="lref">357–358</span><span>Refuse data built without <code>legal=True</code>: there would be nothing to check against.</span></li>
+    <li><span class="lref">360–362</span><span>Run the model on a batch of games and take its top move (argmax) at every position.</span></li>
+    <li><span class="lref">363–368</span><span>For each game, look the predicted token up in <code>legal_next</code> at positions 0 to T − 2, the positions with a recorded next move, and count the hits.</span></li>
+    <li><span class="lref">369</span><span>Legal hits divided by positions scored.</span></li>
+  </ul>
+  <div class="prose">
+    <p>The same function scores the training check in <code>train.py</code> (1,000 validation games, which decides admission) and D1 (1,000 test games, the master-table score). Lessons 6 and 10 pick it up from there.</p>
+  </div>
+</section>
+
+<!--QUIZ:3.7-->

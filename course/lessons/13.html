@@ -1,0 +1,176 @@
+<header class="lesson-head">
+  <!--LESSON_HEAD-->
+  <p class="lede">D4 opens the model up. If it keeps a picture of the board inside, a simple classifier should be able to read the board from its activations, and editing that picture should change its moves. Two checks keep the reading honest: a control task, and the causal edit.</p>
+  <p class="meta">About <!--MINUTES--> minutes · Files: <code>src/diagnostics/d4/representation_probe.py</code>, <code>src/diagnostics/d4/reproduce_nanda_probe.py</code>, <code>src/diagnostics/d4/toy_probe.py</code>, <code>src/docs/d4_representation_probe.md</code> · Owner: Siddu</p>
+</header>
+
+<section class="section" id="l13-idea">
+  <h3><span class="num">13.1</span>The idea, and the number it was checked against</h3>
+  <div class="prose">
+    <p>The model only ever reads move tokens. After every move, D4 records the vector after each layer (Lesson 9) and trains a <em>probe</em>, a linear classifier, to read from that vector, for each of the 64 squares, whether it is mine, theirs or empty, relative to the player who just moved. If the probe reads the board well, the board is encoded in the model. This is the tradition of Li et al. (2023) and Nanda et al. (2023), who showed Othello-GPT stores the board, and stores it as mine/theirs.</p>
+    <p>Before building on it, the team reproduced a published number with its own code (the reproduction gate, <code>reproduce_nanda_probe.py</code>): linear probes on the synthetic Othello-GPT, trained on 100,000 games.</p>
+  </div>
+  <div class="table-scroll">
+    <table class="mid-table">
+      <thead><tr><th scope="col">Labels</th><th scope="col">Layer</th><th scope="col">Ours (%)</th><th scope="col">Nanda et al. (%)</th><th scope="col">Within 1 point</th></tr></thead>
+      <tbody>
+        <tr><td>mine / theirs / empty</td><td class="num">0</td><td class="num">90.5</td><td class="num">90.9</td><td class="good">yes</td></tr>
+        <tr><td>mine / theirs / empty</td><td class="num">4</td><td class="num">98.7</td><td class="num">99.0</td><td class="good">yes</td></tr>
+        <tr><td>mine / theirs / empty</td><td class="num">7</td><td class="num">98.9</td><td class="num">99.5</td><td class="good">yes</td></tr>
+        <tr><td>black / white / empty</td><td class="num">0</td><td class="num">75.8</td><td class="num">62.2</td><td class="bad">no</td></tr>
+        <tr><td>black / white / empty</td><td class="num">4</td><td class="num">75.9</td><td class="num">75.0</td><td class="good">yes</td></tr>
+        <tr><td>black / white / empty</td><td class="num">7</td><td class="num">75.2</td><td class="num">74.4</td><td class="good">yes</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="prose">
+    <p>Five of six values match within the tolerance chosen before comparing, so the gate passed. The key finding reproduces: a linear probe reads the board almost perfectly as mine/theirs and only about 75% as black/white. The one miss, black/white at layer 0, is flat at about 76% across all layers in our run, which points to a difference in what “layer 0” means; it does not affect D4, which uses mine/theirs.</p>
+  </div>
+</section>
+
+<section class="section" id="l13-data">
+  <h3><span class="num">13.2</span>Data, activations and the probe</h3>
+  <ul class="points">
+    <li><span class="p-name">Three sets of games, never mixed.</span><span>From 11,000 validation games of the model’s own distribution, the first 10,000 fit the probes and the last 1,000 choose the layer. 1,000 test games give the score, so the test games never influence any choice.</span></li>
+    <li><span class="p-name">Every layer, every position.</span><span>The vector after each block (transformer, Mamba) or each LSTM layer, at every real position of every game.</span></li>
+    <li><span class="p-name">Standardized first.</span><span>Each activation feature is shifted and scaled by its mean and spread over the fitting games. LSTM hidden states lie between −1 and 1 while residual streams are much larger, so without this one learning rate would be unfair to some architectures. Checked on a model whose layer holds the true board: the probe reads it at 0.9999.</span></li>
+    <li><span class="p-name">One linear map per layer.</span><span>From the width of the layer to 64 squares × 3 classes, trained with cross-entropy and AdamW (learning rate 1e-3, weight decay 0.01) for 2 epochs, one step per 1,024 positions: about 1,100 steps.</span></li>
+  </ul>
+  <!--CODE:src/diagnostics/d4/representation_probe.py:217:237-->
+  <ul class="walk">
+    <li><span class="lref">219–220</span><span>Activations for 256 games at a time, computed under <code>no_grad</code>: the model is only read, never trained.</span></li>
+    <li><span class="lref">221–223</span><span>The real labels from <code>mine_theirs</code>, the control labels (section 13.3), and the standardized vectors, all at the real positions only.</span></li>
+    <li><span class="lref">224–237</span><span>Shuffle the positions and take steps of 1,024. Each step trains, for every layer, the real probe on the real labels and the control probe on the control labels, from the same vectors. The MLP probes (section 13.6) have their own optimizer, so adding them left the linear probes, and the score, exactly as before.</span></li>
+  </ul>
+</section>
+
+<section class="section" id="l13-control">
+  <h3><span class="num">13.3</span>The control task: how much can a probe score by memorizing?</h3>
+  <div class="prose">
+    <p>A probe with enough capacity can learn things the model does not represent in any useful way, simply by memorizing. Hewitt and Liang (2019) proposed a control: give the probe labels that have no link to the board, and see how well it does anyway. The real probe’s accuracy minus the control probe’s accuracy is the <strong>selectivity</strong>, the part of the reading that memorizing cannot explain.</p>
+  </div>
+  <div class="worked">
+    <div class="wk-card">
+      <p class="eyebrow">Real labels · from the board</p>
+      <p class="wk-desc">Two games both have E3 played as move 4. Their boards differ, so the real labels differ: the probe must read the board out of the vector to get them right.</p>
+    </div>
+    <div class="wk-card">
+      <p class="eyebrow">Control labels · from the type only</p>
+      <p class="wk-desc">A position’s <em>type</em> is (square just played, position in the game): 60 × 59 = 3,540 types. Each type gets one fixed random label per square, drawn from that square’s real mix of classes. Both games above get the same control labels, so a control probe can only score by recognizing types.</p>
+    </div>
+  </div>
+  <!--CODE:src/diagnostics/d4/representation_probe.py:126:144-->
+  <ul class="walk">
+    <li><span class="lref">126–129</span><span>The type of every position: token of the square just played × 59 + position.</span></li>
+    <li><span class="lref">132–135</span><span>How often each square is empty, mine or theirs in the fitting games.</span></li>
+    <li><span class="lref">138–144</span><span>One uniform random number per type and square, turned into a class by that square’s cumulative frequencies, with seed 0: the control labels match the real class mix, but carry no information about any particular board.</span></li>
+  </ul>
+</section>
+
+<section class="section" id="l13-score">
+  <h3><span class="num">13.4</span>Choosing the layer, and the score</h3>
+  <!--CODE:src/diagnostics/d4/representation_probe.py:537:549-->
+  <ul class="walk">
+    <li><span class="lref">537–541</span><span>Class frequencies and control labels from the fitting games, the standardization statistics, then all probes.</span></li>
+    <li><span class="lref">543–547</span><span>Accuracy of every probe on the layer-choice games and on the test games, and the selectivity of every layer on both.</span></li>
+    <li><span class="lref">548</span><span>The best layer is the one with the highest selectivity on the layer-choice games, never on test.</span></li>
+    <li><span class="lref">549</span><span>The <strong>occupancy-only baseline</strong>: the accuracy of a rule that knows only which squares are occupied (empty squares called empty, occupied ones given their most common class). The move list alone gives this much away.</span></li>
+  </ul>
+  <div class="prose">
+    <p>The score is the best layer’s selectivity on the test games. Every other number goes into <code>details</code>, per layer: probe accuracy, control accuracy, selectivity, the gain over layer 0, accuracy on occupied squares only (whose disc it is, which the moves do not give away), and each layer’s gain over the occupancy baseline.</p>
+  </div>
+  <!--CHART:d4-layers|Per-layer probe and control accuracy on the test games for the two anchors; the shaded band between them is the selectivity. The synthetic Othello-GPT’s board becomes almost perfectly readable by layer 5, while the control stays near 0.56; the championship Othello-GPT peaks at 0.90 at layer 3. The marked layer is the one chosen on the layer-choice games.-->
+  <div class="table-scroll">
+    <table class="mid-table">
+      <thead><tr><th scope="col">Anchor (test)</th><th scope="col">Best layer</th><th scope="col">Probe</th><th scope="col">Control</th><th scope="col">Score (selectivity)</th><th scope="col">Occupancy baseline</th><th scope="col">Occupied squares only</th></tr></thead>
+      <tbody>
+        <tr><td>Othello-GPT synthetic</td><td class="num">6</td><td class="num">0.990</td><td class="num">0.556</td><td class="num">0.4345</td><td class="num">0.756</td><td class="num">0.986</td></tr>
+        <tr><td>Othello-GPT championship</td><td class="num">3</td><td class="num">0.899</td><td class="num">0.627</td><td class="num">0.2720</td><td class="num">0.757</td><td class="num">0.815</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="section" id="l13-mlp">
+  <h3><span class="num">13.5</span>The nonlinear probe</h3>
+  <div class="prose">
+    <p>Amendment 2 added the second kind of probe the proposal promised: one hidden layer of 256 units with ReLU, with its own control probe, trained on exactly the same data. It is reported in <code>details["mlp"]</code> and is not the score, for a reason the anchors show directly: a more expressive probe also memorizes better, so its control accuracy rises with it.</p>
+  </div>
+  <div class="table-scroll">
+    <table class="mid-table">
+      <thead><tr><th scope="col">Anchor (test)</th><th scope="col">Linear: layer, probe, control, selectivity</th><th scope="col">MLP: layer, probe, control, selectivity</th></tr></thead>
+      <tbody>
+        <tr><td>Othello-GPT synthetic</td><td class="num">6 · 0.990 · 0.556 · 0.4345</td><td class="num">7 · 0.990 · 0.574 · 0.4157</td></tr>
+        <tr><td>Othello-GPT championship</td><td class="num">3 · 0.899 · 0.627 · 0.2720</td><td class="num">4 · 0.902 · 0.672 · 0.2297</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="section" id="l13-causal">
+  <h3><span class="num">13.6</span>The causal check: does the model use what the probe reads?</h3>
+  <div class="prose">
+    <p>A board that can be read from the activations is not necessarily a board the model uses. The probe might pick up a by-product. Li et al. (2023) settled this for Othello-GPT by editing its internal board and watching its moves follow. D4 does the same on every model, against a control edit of the same size.</p>
+  </div>
+  <figure>
+    <div class="fig-box">
+      <svg viewBox="0 0 960 330" role="img" aria-label="Step 1: for one position per test game, flip one occupied disc between mine and theirs so the legal next moves change. Step 2a: at every layer from the middle one to the last, move the vector along the probe's gradient until the probe reads the flipped board with at least 0.99 confidence. Step 2b: instead, move the vector in a random direction by exactly the same length. Step 3: compare boundary accuracy, whether moves that became legal are now accepted and moves that stopped being legal are dropped. The causal score is boundary accuracy with the probe edit minus with the random edit.">
+        <defs>
+          <marker id="l13-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker>
+        </defs>
+        <path class="wire" d="M240,150 H258 V82 H278" marker-end="url(#l13-arrow)"/>
+        <path class="wire" d="M258,150 V218 H278" marker-end="url(#l13-arrow)"/>
+        <path class="wire" d="M580,82 H598 V140 H618" marker-end="url(#l13-arrow)"/>
+        <path class="wire" d="M580,218 H598 V160 H618" marker-end="url(#l13-arrow)"/>
+        <rect class="box" x="20" y="95" width="220" height="110" rx="8"/>
+        <text class="t-title-sm" x="36" y="121">1 · Pick a case</text>
+        <text class="t-body" x="36" y="143">one per test game: flip one</text>
+        <text class="t-body" x="36" y="162">disc, mine ↔ theirs, so the</text>
+        <text class="t-body" x="36" y="181">legal next moves change</text>
+        <rect class="box-truth" x="280" y="30" width="300" height="104" rx="8"/>
+        <text class="t-title-sm" x="296" y="56">2a · Probe-guided edit</text>
+        <text class="t-body" x="296" y="78">layers from the middle one to the last:</text>
+        <text class="t-body" x="296" y="97">step along the probe’s gradient until</text>
+        <text class="t-body" x="296" y="116">it reads the flipped board (p ≥ 0.99)</text>
+        <rect class="box" x="280" y="166" width="300" height="104" rx="8"/>
+        <text class="t-title-sm" x="296" y="192">2b · Random edit (the control)</text>
+        <text class="t-body" x="296" y="214">the same layers and positions,</text>
+        <text class="t-body" x="296" y="233">a random direction of exactly</text>
+        <text class="t-body" x="296" y="252">the same length</text>
+        <rect class="box" x="620" y="95" width="320" height="110" rx="8"/>
+        <text class="t-title-sm" x="636" y="121">3 · Boundary accuracy</text>
+        <text class="t-body" x="636" y="143">the model accepts its k best moves:</text>
+        <text class="t-body" x="636" y="162">moves that became legal: accepted?</text>
+        <text class="t-body" x="636" y="181">moves no longer legal: dropped?</text>
+        <text class="t-strong" x="20" y="300">causal score = boundary accuracy with the probe edit − with the random edit, averaged over 1,000 cases</text>
+        <text class="t-muted" x="20" y="320">with a 95% bootstrap interval; boundary accuracy with no edit at all is reported as a reference</text>
+      </svg>
+    </div>
+    <figcaption><b><!--FIGNUM--></b> The causal check. Edits run inside one forward pass in layer order, so each later layer sees the earlier edits (<code>logits_edited</code>, Lesson 9). Boundary accuracy is the same idea as D2’s distinction error.</figcaption>
+  </figure>
+  <!--CODE:src/diagnostics/d4/representation_probe.py:342:370-->
+  <ul class="walk">
+    <li><span class="lref">350–353</span><span>Work in the standardized space, with a step length of 0.05 × √width, so a step means the same for every architecture.</span></li>
+    <li><span class="lref">356–361</span><span>Stop moving a case as soon as the probe reads the whole edited board and gives the flipped square’s new class at least 0.99. Edits stay as small as that allows.</span></li>
+    <li><span class="lref">362–367</span><span>Otherwise take one step down the gradient of the probe’s loss for the edited board, normalized to unit length, and only for the cases not yet done.</span></li>
+  </ul>
+  <!--CODE:src/diagnostics/d4/representation_probe.py:397:403-->
+  <div class="table-scroll">
+    <table class="mid-table">
+      <thead><tr><th scope="col">Anchor (test)</th><th scope="col">Edited layers</th><th scope="col">Causal score [95% CI]</th><th scope="col">Probe edit · random · none</th><th scope="col">Label</th></tr></thead>
+      <tbody>
+        <tr><td>Othello-GPT synthetic</td><td class="num">4 to 7</td><td class="num">0.693 [0.665, 0.719]</td><td class="num">0.872 · 0.179 · 0.198</td><td class="good">decodable and causal</td></tr>
+        <tr><td>Othello-GPT championship</td><td class="num">3 to 7</td><td class="num">0.151 [0.122, 0.180]</td><td class="num">0.544 · 0.393 · 0.387</td><td class="bad">decodable but not causal</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="prose">
+    <p>The synthetic Othello-GPT is the positive control, because the published work already showed its board is causal: editing it moves boundary accuracy from 0.18 to 0.87. The championship model’s board is readable (selectivity 0.27) but editing it barely beats a random push, so it is labelled <strong>decodable but not causal</strong>. H3 reports such models separately and tests whether the label predicts fragility beyond the selectivity score.</p>
+    <p>Why edit from the middle layer onward? The setting was chosen on the anchors only, as the one with the largest causal score on the positive control. Editing only the best layer (6 of 8) comes too late: later layers still attend to earlier positions that hold the unedited board, and the synthetic model builds its board around layer 4. Editing from layer 0 adds noise where no board is held yet. The 0.20 pass mark was written down before that comparison was run and not changed after it.</p>
+  </div>
+<pre class="plain"><code>python src/diagnostics/d4/toy_probe.py                 <span class="c"># 4×4 Othello, a tiny model, linear probes and the control: any laptop, minutes</span>
+python src/diagnostics/d4/reproduce_nanda_probe.py     <span class="c"># the reproduction gate on the synthetic Othello-GPT (GPU)</span>
+python src/diagnostics/d4/representation_probe.py --models othello_gpt_synthetic othello_gpt_championship</code></pre>
+</section>
+
+<!--QUIZ:13.7-->

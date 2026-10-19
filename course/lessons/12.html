@@ -1,0 +1,160 @@
+<header class="lesson-head">
+  <!--LESSON_HEAD-->
+  <p class="lede">D3 does not read the model’s answers or its insides. It watches how the model <em>learns</em>: give it a new job that depends on the true board and almost no examples, and see whether its training helps. This is the inductive-bias probe of Vafa et al. (2025), with its symbolic-regression arm.</p>
+  <p class="meta">About <!--MINUTES--> minutes · Files: <code>src/diagnostics/d3/inductive_bias.py</code>, <code>src/diagnostics/d3/toy_probe.py</code>, <code>src/docs/d3_inductive_bias_probe.md</code> · Owner: Nikhil</p>
+</header>
+
+<section class="section" id="l12-idea">
+  <h3><span class="num">12.1</span>The idea</h3>
+  <div class="prose">
+    <p>A model trained only on move lists becomes good at next-move prediction. Did it learn Othello, or only which move tends to follow which? From the outside the two look the same. So D3 gives the model a job it has never done, with only 64 labelled examples to learn it from. If the model already tracks the board, 64 examples are enough to learn what the question means. If it only memorized move patterns, they are not, because the answer depends on a board it does not have.</p>
+    <p>A second model with the same architecture and size, but random weights, gets the same 64 examples. It shows what 64 examples are worth on their own. The difference between the two is the model’s <em>inductive bias</em>: what its training makes easy to learn. Vafa et al. found that models trained on planetary orbits predicted trajectories well, yet once adapted to a new physics task behaved as if they had learned a force law that makes no physical sense.</p>
+  </div>
+  <div class="note">
+    <span class="label">The toy version first</span>
+    <p><code>toy_probe.py</code> runs the same idea in seconds on the smallest world with the same shape: a walker on a line of six positions with a wall at each end. Pretrained on next-move prediction, then adapted on 16 walks to answer “where is the walker now?”, the pretrained model beat its random twin on all five seeds, by 0.27 on average, but the gap ranged from 0.12 to 0.33 across seeds. One seed is not enough to rank models, which is why the real protocol uses three.</p>
+  </div>
+</section>
+
+<section class="section" id="l12-tasks">
+  <h3><span class="num">12.2</span>The four tasks</h3>
+  <div class="prose">
+    <p>Each task is a yes-or-no question about one square right after a move: “is square X mine?”, where <em>mine</em> means the disc belongs to the player who just moved (the <code>mine_theirs</code> board from Lesson 3). The squares are C4, F5, C3 and F6. Between about 41% and 55% of the answers are yes, depending on the square and the distribution, so the tasks are close to balanced.</p>
+  </div>
+  <figure>
+    <div class="fig-box narrow"><!--FIG:d3-squares--></div>
+    <figcaption><b><!--FIGNUM--></b> The four task squares (marked) on a real position. Each question needs the colour of a disc, which only the flips give away.</figcaption>
+  </figure>
+  <div class="note warn">
+    <span class="label">Why not “is square X occupied?”</span>
+    <p>It was considered and rejected. On 2,000 synthetic validation games, whether a square is occupied equals whether its token appears in the move list in 100% of cases, so it can be answered without any board at all (Lesson 2). Whose disc it is depends on every flip since, and cannot be read off the move list.</p>
+  </div>
+</section>
+
+<section class="section" id="l12-protocol">
+  <h3><span class="num">12.3</span>The protocol</h3>
+  <figure>
+    <div class="fig-box">
+      <svg viewBox="0 0 960 300" role="img" aria-label="Two lanes. Top: a deep copy of the trained model gets a new linear head from d_model to 2, is adapted on 64 labelled validation positions with head learning rate 1e-3, body learning rate 1e-4, 300 steps of 16, and is scored on 1,000 test positions by balanced accuracy. Bottom: a model of the same size with random weights goes through exactly the same steps. The gap is pretrained minus random. The score is the mean gap over 4 tasks and 3 seeds.">
+        <defs>
+          <marker id="l12-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker>
+        </defs>
+        <path class="wire" d="M230,60 H258" marker-end="url(#l12-arrow)"/>
+        <path class="wire" d="M430,60 H458" marker-end="url(#l12-arrow)"/>
+        <path class="wire" d="M700,60 H728" marker-end="url(#l12-arrow)"/>
+        <path class="wire" d="M230,200 H258" marker-end="url(#l12-arrow)"/>
+        <path class="wire" d="M430,200 H458" marker-end="url(#l12-arrow)"/>
+        <path class="wire" d="M700,200 H728" marker-end="url(#l12-arrow)"/>
+        <path class="wire" d="M835,90 V110" marker-end="url(#l12-arrow)"/>
+        <path class="wire" d="M835,170 V150" marker-end="url(#l12-arrow)"/>
+        <rect class="box-truth" x="20" y="30" width="210" height="60" rx="8"/>
+        <text class="t-title-sm" x="36" y="55">trained model, deep copy</text>
+        <text class="t-muted" x="36" y="76">the original is never changed</text>
+        <rect class="box" x="20" y="170" width="210" height="60" rx="8"/>
+        <text class="t-title-sm" x="36" y="195">same size, random weights</text>
+        <text class="t-muted" x="36" y="216">one per seed</text>
+        <rect class="box" x="260" y="30" width="170" height="60" rx="8"/>
+        <text class="t-title-sm" x="276" y="55">new linear head</text>
+        <text class="t-muted" x="276" y="76">d_model → 2: mine or not</text>
+        <rect class="box" x="260" y="170" width="170" height="60" rx="8"/>
+        <text class="t-title-sm" x="276" y="195">new linear head</text>
+        <text class="t-muted" x="276" y="216">d_model → 2: mine or not</text>
+        <rect class="box" x="460" y="30" width="240" height="60" rx="8"/>
+        <text class="t-title-sm" x="476" y="55">adapt on 64 val positions</text>
+        <text class="t-muted" x="476" y="76">head lr 1e-3 · body lr 1e-4 · 300 × 16</text>
+        <rect class="box" x="460" y="170" width="240" height="60" rx="8"/>
+        <text class="t-title-sm" x="476" y="195">adapt on the same 64</text>
+        <text class="t-muted" x="476" y="216">exactly the same settings</text>
+        <rect class="box" x="730" y="30" width="210" height="60" rx="8"/>
+        <text class="t-title-sm" x="746" y="55">score 1,000 test positions</text>
+        <text class="t-muted" x="746" y="76">balanced accuracy</text>
+        <rect class="box" x="730" y="170" width="210" height="60" rx="8"/>
+        <text class="t-title-sm" x="746" y="195">score the same 1,000</text>
+        <text class="t-muted" x="746" y="216">balanced accuracy</text>
+        <rect class="box-warn" x="730" y="110" width="210" height="40" rx="8"/>
+        <text class="t-strong" x="835" y="135" text-anchor="middle">gap = pretrained − random</text>
+        <text class="t-body" x="20" y="272">score = the mean gap over 4 tasks × 3 seeds (0, 1, 2); score_std = the spread of the 3 per-seed means.</text>
+        <text class="t-muted" x="20" y="292">A seed sets the head’s start, the batch draws and the random twin’s weights.</text>
+      </svg>
+    </div>
+    <figcaption><b><!--FIGNUM--></b> One task, one seed. The run repeats this for every task and seed: 12 adaptations of the trained model and 12 of its random twins.</figcaption>
+  </figure>
+  <div class="prose">
+    <p><strong>Balanced accuracy</strong> is the mean of the hit rate on “mine” and the hit rate on “not mine”. A model that always answers the more common class scores 0.5, not the 0.55 to 0.59 plain accuracy would give it, so a lazy answer earns nothing.</p>
+  </div>
+  <div class="note">
+    <span class="label">Why these learning rates</span>
+    <p>They were chosen on the synthetic Othello-GPT only, never on a zoo model (Amendment 1, A7). Of the four settings tried, a body rate of 1e-4 gave the largest gap (0.140). A body rate of 1e-5 was also rejected for a second reason: it leaves the model almost frozen, so D3 would become a linear probe on the last layer, close to D4 by construction, and their agreement under H1 would be partly built in.</p>
+  </div>
+</section>
+
+<section class="section" id="l12-code">
+  <h3><span class="num">12.4</span>The code</h3>
+  <!--CODE:src/diagnostics/d3/inductive_bias.py:132:142-->
+  <ul class="walk">
+    <li><span class="lref">135–138</span><span>Build the games (Lesson 3) and pick one random real position per game, with a fixed seed, so the adaptation and test examples never change between models.</span></li>
+    <li><span class="lref">140–141</span><span>Read the mine/theirs board at that position and turn it into four 0/1 labels, one per task square.</span></li>
+  </ul>
+  <!--CODE:src/diagnostics/d3/inductive_bias.py:191:229-->
+  <ul class="walk">
+    <li><span class="lref">197–203</span><span>A fresh 2-way head, and AdamW with two learning rates: 1e-3 for the head, 1e-4 for the rest of the model. Training mode is needed because cuDNN’s LSTM only computes gradients in it; there is no dropout to switch on.</span></li>
+    <li><span class="lref">209–215</span><span>300 steps, each on 16 of the 64 examples drawn with replacement. <code>last_layer()</code> returns the vector after the last layer with gradients on, for any architecture, and the head reads it at the example’s position.</span></li>
+    <li><span class="lref">218–225</span><span>Score all 1,000 test positions, and keep the margin, logit(mine) − logit(not mine), for the symbolic-regression arm.</span></li>
+  </ul>
+  <!--CODE:src/diagnostics/d3/inductive_bias.py:397:416-->
+  <ul class="walk">
+    <li><span class="lref">405</span><span>One random-weights twin per seed, shared by the four tasks: <code>build_model()</code> for a zoo model, a fresh 8-layer TransformerLens model for an anchor.</span></li>
+    <li><span class="lref">407–410</span><span>Both are adapted as deep copies, so neither the trained model nor the twin changes between tasks, and every other diagnostic still sees the original weights.</span></li>
+  </ul>
+</section>
+
+<section class="section" id="l12-anchors">
+  <h3><span class="num">12.5</span>The anchors</h3>
+  <!--CHART:d3-gaps|The D3 gap per task for the two anchors, averaged over the three seeds. The synthetic Othello-GPT learns each “is X mine?” question from 64 examples clearly better than its random twin; the championship Othello-GPT gains less than half as much.-->
+  <div class="table-scroll">
+    <table class="mid-table">
+      <thead><tr><th scope="col">Anchor</th><th scope="col">Pretrained</th><th scope="col">Random twin</th><th scope="col">Score (gap)</th><th scope="col">Per-seed gaps</th></tr></thead>
+      <tbody>
+        <tr><td>Othello-GPT synthetic</td><td class="num">0.699</td><td class="num">0.559</td><td class="num">0.1397</td><td class="num">0.131 · 0.150 · 0.138</td></tr>
+        <tr><td>Othello-GPT championship</td><td class="num">0.621</td><td class="num">0.562</td><td class="num">0.0593</td><td class="num">0.050 · 0.058 · 0.070</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note">
+    <span class="label">What D3 measures, and what it does not</span>
+    <p>A model whose last layer already holds the true board reaches only about 0.8 balanced accuracy from 64 examples, because many features can fit 64 points. So D3 measures how much the pretrained model helps, not how close it gets to a perfect answer. The paper states this limitation.</p>
+  </div>
+</section>
+
+<section class="section" id="l12-sr">
+  <h3><span class="num">12.6</span>The symbolic-regression arm</h3>
+  <div class="prose">
+    <p>Vafa et al. also asked <em>which rule</em> an adapted model has learned. After every adaptation, D3 runs PySR, a symbolic-regression search, to find a short formula that reproduces the adapted model’s margin on the 1,000 test positions from the 64 true squares (+1 mine, −1 theirs, 0 empty). The search uses only +, − and ×, at most 15 nodes, the 10 most relevant squares, 40 iterations, deterministic, with the adaptation seed as its random seed. Then it reads the formula square by square:</p>
+  </div>
+  <!--CODE:src/diagnostics/d3/inductive_bias.py:312:325-->
+  <ul class="walk">
+    <li><span class="lref">314–320</span><span>For every square j, set it to mine, theirs and empty on all test boards and compare the formula’s outputs. <strong>Contrast</strong>: how much the formula tells mine from theirs on j. <strong>Occupancy effect</strong>: how much it reacts to j being occupied at all.</span></li>
+    <li><span class="lref">323–325</span><span><strong>Law recovered</strong>: the task’s own square has the largest contrast, mine raises the margin, and the formula’s sign beats chance against the true answer.</span></li>
+  </ul>
+  <div class="prose">
+    <p>A formula like <code>a × sq_C4 × sq_C4 + b</code> gives the same value for mine (+1) and theirs (−1): it only notices that C4 is occupied. It has zero contrast, so it never counts as recovered. It is flagged as the <strong>occupancy shortcut</strong> instead. Two real formulas the synthetic anchor’s adapted models produced for “is C4 mine?”:</p>
+  </div>
+<pre class="plain"><code>sq_C4 - sq_E5                                <span class="c"># seeds 1 and 2: mine on C4 raises the answer; the law is recovered</span>
+-6.1055055 - (sq_C4 * (-5.1848264 * sq_C4))  <span class="c"># seed 0: grows with sq_C4², i.e. "C4 is occupied": the shortcut</span></code></pre>
+  <div class="table-scroll">
+    <table class="mid-table">
+      <thead><tr><th scope="col">Anchor</th><th scope="col">Law recovered: pretrained · random</th><th scope="col">Occupancy shortcut: pretrained · random</th></tr></thead>
+      <tbody>
+        <tr><td>Othello-GPT synthetic</td><td class="num">2/12 · 1/12</td><td class="num">7/12 · 1/12</td></tr>
+        <tr><td>Othello-GPT championship</td><td class="num">0/12 · 0/12</td><td class="num">6/12 · 0/12</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="prose">
+    <p>The short formulas almost never recover the “is X mine?” law. What they find instead, in about half the searches and almost never for the random twins, is the occupancy shortcut: once adapted, the pretrained models’ answers largely follow whether the square is occupied. Part of D3’s pretrained advantage may therefore come from occupancy, which the move list gives away. The D3 score is unchanged; the shortcut rate is reported next to it for every model, so the analysis can show how much of D3 it explains. Stability across the three seeds (the overlap of the squares each formula uses) is reported too, because the search is stochastic.</p>
+  </div>
+<pre class="plain"><code>python src/diagnostics/d3/toy_probe.py --seeds 0 1 2 3 4                  <span class="c"># the walker toy, any laptop</span>
+python src/diagnostics/d3/inductive_bias.py --models othello_gpt_synthetic   <span class="c"># about 7 minutes for an anchor</span></code></pre>
+</section>
+
+<!--QUIZ:12.7-->

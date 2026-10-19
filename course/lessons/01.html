@@ -1,0 +1,368 @@
+<header class="lesson-head">
+  <!--LESSON_HEAD-->
+  <p class="lede">What the project tests, the four tests it compares, and which script runs at each stage. There is no code in this lesson; it is the map the rest of the course fills in.</p>
+  <p class="meta">About <!--MINUTES--> minutes · Sources: <code>README.md</code>, <code>reports/proposal.md</code>, <code>reports/preregistration.md</code></p>
+</header>
+
+<section class="section" id="l1-question">
+  <h3><span class="num">1.1</span>The question</h3>
+  <div class="prose">
+    <p>Train a small model on Othello move lists, with no board and no rules, and it learns to propose legal moves. Has it built an internal picture of the board (a <em>world model</em>), or has it learned move statistics that happen to work?</p>
+    <p>Published papers answer with four different tests, and each paper picks its own. Nobody had run all four on the same models to see whether they agree. WM-Concord does exactly that: it trains a zoo of small models in worlds where the truth is known, runs all four tests on every model, and asks four questions.</p>
+  </div>
+  <ul class="hyps">
+    <li><span class="tag">H1</span><span><span class="h-name">Agreement.</span> Do the four tests rank the models in the same order?</span></li>
+    <li><span class="tag">H2</span><span><span class="h-name">Disagreement.</span> Where they disagree, is it systematic (tied to architecture, scale or training data) or noise?</span></li>
+    <li><span class="tag">H3</span><span><span class="h-name">Prediction.</span> Which test best predicts a model breaking on shifted positions, measured by the fragility suite?</span></li>
+    <li><span class="tag">H4</span><span><span class="h-name">Generalization.</span> Do the answers hold on a domain kept out of all earlier analysis (the interpreter)?</span></li>
+  </ul>
+  <div class="note">
+    <span class="label">Why any outcome counts</span>
+    <p>If the tests agree, the cheap ones can stand in for the expensive ones. If they disagree, a paper that rests on one test is on weaker ground than it looks. The study reports either result.</p>
+  </div>
+</section>
+
+<section class="section" id="l1-othello">
+  <h3><span class="num">1.2</span>Why Othello: every move has an answer key</h3>
+  <div class="prose">
+    <p>In Othello a move list fixes the board completely. For any position in any game, the rules can say what the board is and which moves are legal, so every test has an exact answer key to check the model against. New to the game? <a href="#lesson-2">Lesson 2</a> teaches it in ten minutes.</p>
+    <p>The model’s input is tokens. The 60 squares a move can land on are tokens 1 to 60 (the four centre squares start occupied and are never played), and 0 is padding. The opening D3, C3, C4 reaches the model as <code>20 19 27</code>.</p>
+  </div>
+  <figure>
+    <div class="fig-box">
+      <svg viewBox="0 0 960 300" role="img" aria-label="One move list goes to two readers. The model sees only tokens and produces scores for 61 tokens and a vector per layer. The rules engine, othello.py replay, replays the same moves into the true board: after D3 C3 C4, white is to move and the legal moves are C5 and E3. The diagnostics D1 to D4 check the model against that answer key.">
+        <defs>
+          <marker id="f1-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker>
+        </defs>
+        <path class="wire" d="M206,135 H246 V65 H284" marker-end="url(#f1-arrow)"/>
+        <path class="wire" d="M206,165 H246 V235 H284" marker-end="url(#f1-arrow)"/>
+        <path class="wire" d="M506,65 H564" marker-end="url(#f1-arrow)"/>
+        <path class="wire" d="M506,235 H564" marker-end="url(#f1-arrow)"/>
+        <path class="wire" d="M776,65 H800 V128 H824" marker-end="url(#f1-arrow)"/>
+        <path class="wire" d="M776,220 H800 V172 H824" marker-end="url(#f1-arrow)"/>
+        <rect class="box" x="16" y="105" width="190" height="90" rx="8"/>
+        <text class="t-title" x="32" y="131">Move list</text>
+        <text class="t-mono" x="32" y="154">D3 C3 C4</text>
+        <text class="t-mono-muted" x="32" y="176">tokens 20 19 27 0 …</text>
+        <rect class="box" x="286" y="20" width="220" height="90" rx="8"/>
+        <text class="t-title" x="302" y="46">The model</text>
+        <text class="t-body" x="302" y="68">transformer · LSTM · Mamba</text>
+        <text class="t-muted" x="302" y="89">sees only the tokens</text>
+        <rect class="box-truth" x="286" y="190" width="220" height="90" rx="8"/>
+        <text class="t-title" x="302" y="216">The rules engine</text>
+        <text class="t-mono" x="302" y="238">othello.py replay()</text>
+        <text class="t-muted" x="302" y="259">replays the same moves</text>
+        <rect class="box" x="566" y="20" width="210" height="90" rx="8"/>
+        <text class="t-title" x="582" y="46">Its answer</text>
+        <text class="t-body" x="582" y="68">scores for all 61 tokens</text>
+        <text class="t-muted" x="582" y="89">and a vector per layer</text>
+        <rect class="box-truth" x="566" y="150" width="210" height="140" rx="8"/>
+        <text class="t-title" x="582" y="174">The answer key</text>
+        <g transform="translate(582 186)">
+          <rect class="board" width="88" height="88" rx="2"/>
+          <path class="board-grid" d="M11,0V88 M22,0V88 M33,0V88 M44,0V88 M55,0V88 M66,0V88 M77,0V88 M0,11H88 M0,22H88 M0,33H88 M0,44H88 M0,55H88 M0,66H88 M0,77H88"/>
+          <circle class="disc-w" cx="27.5" cy="27.5" r="4.3"/>
+          <circle class="disc-b" cx="38.5" cy="27.5" r="4.3"/>
+          <circle class="disc-b" cx="27.5" cy="38.5" r="4.3"/>
+          <circle class="disc-b" cx="38.5" cy="38.5" r="4.3"/>
+          <circle class="disc-b" cx="49.5" cy="38.5" r="4.3"/>
+          <circle class="disc-b" cx="38.5" cy="49.5" r="4.3"/>
+          <circle class="disc-w" cx="49.5" cy="49.5" r="4.3"/>
+          <circle class="legal-dot" cx="27.5" cy="49.5" r="1.9"/>
+          <circle class="legal-dot" cx="49.5" cy="27.5" r="1.9"/>
+        </g>
+        <text class="t-body" x="682" y="204">white to move</text>
+        <text class="t-muted" x="682" y="228">legal next</text>
+        <text class="t-mono" x="682" y="248">C5, E3</text>
+        <rect class="box" x="826" y="105" width="120" height="90" rx="8"/>
+        <text class="t-title" x="842" y="131">D1 – D4</text>
+        <text class="t-body" x="842" y="153">check the model</text>
+        <text class="t-body" x="842" y="172">against the key</text>
+      </svg>
+    </div>
+    <figcaption><b><!--FIGNUM--></b> One move list, two readers. The model sees only tokens. <code>src/domains/othello.py</code> replays the same moves into the true board and its legal next moves (after D3 C3 C4: white to move, C5 or E3, the small dots). Every diagnostic checks the model against that answer key.</figcaption>
+  </figure>
+  <div class="prose">
+    <p>All of this lives in one file, <code>src/domains/othello.py</code>. The trainer, all four tests, the fragility suite and the test suite import it, and no other file keeps its own copy of the rules. <a href="#lesson-3">Lesson 3</a> opens it up.</p>
+    <p>Othello is the first of three planned domains. Navigation (street maps) and a small program interpreter come after 20 October; the interpreter is held out for H4.</p>
+  </div>
+</section>
+
+<section class="section" id="l1-tests">
+  <h3><span class="num">1.3</span>Four ways to test one model</h3>
+  <div class="prose">
+    <p>The four tests look at different parts of the same model. Two only watch its output, one fine-tunes a copy of it, and one reads its insides.</p>
+  </div>
+  <figure>
+    <div class="fig-box">
+      <svg viewBox="0 0 960 360" role="img" aria-label="A model drawn as a stack: move tokens enter an embedding, pass through layer 1 to layer L and a head that outputs next-move scores for 61 tokens. D1 and D2 read only the next-move scores. D3 adds a new head on layer L and fine-tunes a copy on 64 labelled examples, compared with a random-weights twin. D4 reads the vector after every layer with a probe for mine, theirs or empty on all 64 squares.">
+        <defs>
+          <marker id="f2-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker>
+        </defs>
+        <path class="wire" d="M480,82 V52" marker-end="url(#f2-arrow)"/>
+        <line class="wire" x1="480" y1="114" x2="480" y2="126"/>
+        <line class="wire" x1="480" y1="158" x2="480" y2="170"/>
+        <line class="wire" x1="480" y1="202" x2="480" y2="214"/>
+        <line class="wire" x1="480" y1="246" x2="480" y2="258"/>
+        <path class="wire" d="M480,322 V292" marker-end="url(#f2-arrow)"/>
+        <path class="wire" d="M395,142 H317" marker-end="url(#f2-arrow)"/>
+        <path class="wire" d="M395,186 H317" marker-end="url(#f2-arrow)"/>
+        <path class="wire" d="M395,230 H317" marker-end="url(#f2-arrow)"/>
+        <path class="wire" d="M565,34 H634" marker-end="url(#f2-arrow)"/>
+        <path class="wire" d="M600,34 V102 H634" marker-end="url(#f2-arrow)"/>
+        <path class="wire" d="M565,142 H600 V196 H634" marker-end="url(#f2-arrow)"/>
+        <text class="t-label" x="356" y="134" text-anchor="middle">reads</text>
+        <text class="t-label" x="600" y="26" text-anchor="middle">reads</text>
+        <rect class="box-tint" x="395" y="18" width="170" height="32" rx="6"/>
+        <text class="t-strong" x="480" y="39" text-anchor="middle">next-move scores (61)</text>
+        <rect class="box" x="395" y="82" width="170" height="32" rx="6"/>
+        <text class="t-body" x="480" y="103" text-anchor="middle">head</text>
+        <rect class="box" x="395" y="126" width="170" height="32" rx="6"/>
+        <text class="t-body" x="480" y="147" text-anchor="middle">layer L</text>
+        <rect class="box" x="395" y="170" width="170" height="32" rx="6"/>
+        <text class="t-body" x="480" y="191" text-anchor="middle">layers 2 … L−1</text>
+        <rect class="box" x="395" y="214" width="170" height="32" rx="6"/>
+        <text class="t-body" x="480" y="235" text-anchor="middle">layer 1</text>
+        <rect class="box" x="395" y="258" width="170" height="32" rx="6"/>
+        <text class="t-body" x="480" y="279" text-anchor="middle">embedding</text>
+        <text class="t-mono" x="480" y="342" text-anchor="middle">D3 C3 C4 …</text>
+        <rect class="box-tint" x="110" y="126" width="205" height="120" rx="8"/>
+        <text class="t-title" x="126" y="151">D4 · probing</text>
+        <text class="t-body" x="126" y="172">a linear probe per layer</text>
+        <text class="t-body" x="126" y="191">reads mine · theirs · empty</text>
+        <text class="t-body" x="126" y="210">on all 64 squares</text>
+        <text class="t-muted" x="126" y="232">+ control task, causal edit</text>
+        <rect class="box-tint" x="636" y="12" width="270" height="46" rx="8"/>
+        <text class="t-title-sm" x="652" y="31">D1 · next-token validity</text>
+        <text class="t-body" x="652" y="49">is the top move legal?</text>
+        <rect class="box-tint" x="636" y="70" width="270" height="64" rx="8"/>
+        <text class="t-title-sm" x="652" y="90">D2 · state equivalence</text>
+        <text class="t-body" x="652" y="108">same board → same moves?</text>
+        <text class="t-body" x="652" y="125">different boards → told apart?</text>
+        <rect class="box-tint" x="636" y="150" width="270" height="92" rx="8"/>
+        <text class="t-title-sm" x="652" y="171">D3 · inductive bias</text>
+        <text class="t-body" x="652" y="190">adds a head on layer L, fine-tunes</text>
+        <text class="t-body" x="652" y="208">a copy on 64 labelled examples</text>
+        <text class="t-muted" x="652" y="228">compared with a random-weights twin</text>
+      </svg>
+    </div>
+    <figcaption><b><!--FIGNUM--></b> Where each test attaches to the same model. D1 and D2 read only the next-move scores. D3 adds a small head on the last layer and fine-tunes a copy of the whole model. D4 reads the vector after every layer. L is 4, 6 or 8, depending on the model’s scale.</figcaption>
+  </figure>
+  <div class="table-scroll">
+    <table class="tests-table">
+      <thead>
+        <tr>
+          <th scope="col">Test</th>
+          <th scope="col">Question it asks</th>
+          <th scope="col">Score it writes</th>
+          <th scope="col">Anchor scores<span class="th-sub">synthetic · championship</span></th>
+          <th scope="col">Code · owner</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="key">D1<span class="sub">Next-token validity</span></td>
+          <td>Is the model’s top predicted move legal?</td>
+          <td>Share of positions where the top move is legal</td>
+          <td class="num">0.9996 · 0.8962</td>
+          <td><code>d1/next_token.py</code><span class="owner">Viharika</span></td>
+        </tr>
+        <tr>
+          <td class="key">D2<span class="sub">State equivalence</span></td>
+          <td>Same board reached two ways: same moves accepted? Different boards: told apart?</td>
+          <td>1 − mean of compression error and distinction error</td>
+          <td class="num">0.9994 · 0.7663</td>
+          <td><code>d2/state_equiv.py</code><span class="owner">Venkatesh</span></td>
+        </tr>
+        <tr>
+          <td class="key">D3<span class="sub">Inductive bias</span></td>
+          <td>Does pretraining help it learn “is square X mine?” from 64 examples?</td>
+          <td>Balanced-accuracy gain over a random-weights twin</td>
+          <td class="num">0.1397 · 0.0593</td>
+          <td><code>d3/inductive_bias.py</code><span class="owner">Nikhil</span></td>
+        </tr>
+        <tr>
+          <td class="key">D4<span class="sub">Representation probing</span></td>
+          <td>Can a linear probe read mine / theirs / empty from the activations?</td>
+          <td>Probe accuracy minus control-task accuracy (selectivity) at the best layer</td>
+          <td class="num">0.4345 · 0.2720</td>
+          <td><code>d4/representation_probe.py</code><span class="owner">Siddu</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="prose">
+    <p>Every test writes one number called <code>score</code>, and higher always means more world-model-like. D2’s natural numbers are errors, so it stores 1 minus the error. The four scores sit on different scales, as the anchor column shows. That is fine: H1 compares rankings with Kendall’s tau, so only the order of the models matters.</p>
+    <p>The anchors are the two published Othello-GPT models (Li et al. 2023), one trained on random games and one on championship games. Every test scores them as reference points, but they never enter the H1–H4 statistics, because they were trained with different code and a much longer budget.</p>
+  </div>
+</section>
+
+<section class="section" id="l1-pipeline">
+  <h3><span class="num">1.4</span>The pipeline: which script runs at each stage</h3>
+  <div class="prose">
+    <p>The work runs as a chain of stages. Each stage is a script that reads files an earlier stage wrote, so any stage can be stopped, restarted or rerun on its own. One line matters more than the rest: no zoo model may be scored until the analysis rules are written down and tagged in git.</p>
+  </div>
+  <figure>
+    <div class="fig-box">
+      <svg viewBox="0 0 960 680" role="img" aria-label="Pipeline of eight stages. Stage 1, get the data with fetch_othello_data.sh, and stage 2, plan the runs with run_matrix.py, feed stage 3, train the zoo with train_slice.sh and train.py. Training records go to stage 4, register and admit with registry.py. Checkpoints cross a freeze line, which needs the git tags prereg-v1.2 and fragility-v1, into stage 5, score D1 to D4, and stage 6, the fragility suite. Diagnostic results go to stage 7, the master table built by results.py. The master table, the fragility results, and the admission and competence data from the registry feed stage 8, the H1 to H4 analysis, which is not written yet. Stages 1 and 2 are done; 3, 4 and 5 are in progress; 6, 7 and 8 have not started.">
+        <defs>
+          <marker id="f3-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker>
+        </defs>
+        <path class="wire" d="M170,100 V190 H354" marker-end="url(#f3-arrow)"/>
+        <text class="t-label" x="180" y="150">game files</text>
+        <path class="wire" d="M665,60 H480 V149" marker-end="url(#f3-arrow)"/>
+        <text class="t-label" x="572" y="52" text-anchor="middle">model list + budget</text>
+        <path class="wire" d="M605,190 H664" marker-end="url(#f3-arrow)"/>
+        <text class="t-label" x="634" y="182" text-anchor="middle">records</text>
+        <path class="wire" d="M480,230 V317" marker-end="url(#f3-arrow)"/>
+        <path class="wire" d="M480,244 H170 V317" marker-end="url(#f3-arrow)"/>
+        <text class="t-label" x="325" y="237" text-anchor="middle">checkpoints</text>
+        <path class="wire" d="M170,398 V447" marker-end="url(#f3-arrow)"/>
+        <text class="t-label" x="180" y="427">results/D1…D4/&lt;id&gt;.json</text>
+        <path class="wire" d="M170,528 V618 H354" marker-end="url(#f3-arrow)"/>
+        <text class="t-label" x="180" y="575">master_table.csv</text>
+        <path class="wire" d="M480,398 V577" marker-end="url(#f3-arrow)"/>
+        <text class="t-label" x="490" y="492">results/fragility/&lt;id&gt;.json</text>
+        <path class="wire" d="M790,230 V618 H606" marker-end="url(#f3-arrow)"/>
+        <text class="t-label" x="780" y="452" text-anchor="end">admitted + competence</text>
+        <line class="gate-line" x1="20" y1="276" x2="940" y2="276"/>
+        <rect class="gate-chip" x="500" y="263" width="280" height="26" rx="13"/>
+        <text class="t-gate" x="640" y="280.5" text-anchor="middle"><tspan class="t-gate-strong">FREEZE</tspan><tspan dx="9">prereg-v1.2 · fragility-v1</tspan></text>
+        <rect class="box" x="45" y="20" width="250" height="80" rx="8"/>
+        <text class="t-title" x="61" y="47">1 · Get the data</text>
+        <text class="t-mono" x="61" y="69">fetch_othello_data.sh</text>
+        <text class="t-muted" x="61" y="88">games + Othello-GPT weights</text>
+        <circle class="st-fill" cx="273" cy="42" r="7"/>
+        <rect class="box" x="665" y="20" width="250" height="80" rx="8"/>
+        <text class="t-title" x="681" y="47">2 · Plan the runs</text>
+        <text class="t-mono" x="681" y="69">run_matrix.py</text>
+        <text class="t-muted" x="681" y="88">243 models, 972 scoring runs</text>
+        <circle class="st-fill" cx="893" cy="42" r="7"/>
+        <rect class="box" x="355" y="150" width="250" height="80" rx="8"/>
+        <text class="t-title" x="371" y="177">3 · Train the zoo</text>
+        <text class="t-mono" x="371" y="199">train_slice.sh → train.py</text>
+        <text class="t-muted" x="371" y="218">81 Othello models, 4 machines</text>
+        <circle class="st-ring" cx="583" cy="172" r="7"/>
+        <path class="st-fill" d="M583,165 A7,7 0 0,0 583,179 Z"/>
+        <rect class="box" x="665" y="150" width="250" height="80" rx="8"/>
+        <text class="t-title" x="681" y="177">4 · Register and admit</text>
+        <text class="t-mono" x="681" y="199">registry.py</text>
+        <text class="t-muted" x="681" y="218">admitted if legal rate ≥ 0.50</text>
+        <circle class="st-ring" cx="893" cy="172" r="7"/>
+        <path class="st-fill" d="M893,165 A7,7 0 0,0 893,179 Z"/>
+        <rect class="box" x="45" y="318" width="250" height="80" rx="8"/>
+        <text class="t-title" x="61" y="345">5 · Score D1–D4</text>
+        <text class="t-mono" x="61" y="367">d1 … d4 · interface.py</text>
+        <text class="t-muted" x="61" y="386">one script per test</text>
+        <circle class="st-ring" cx="273" cy="340" r="7"/>
+        <path class="st-fill" d="M273,333 A7,7 0 0,0 273,347 Z"/>
+        <rect class="box" x="355" y="318" width="250" height="80" rx="8"/>
+        <text class="t-title" x="371" y="345">6 · Fragility suite</text>
+        <text class="t-mono" x="371" y="367">fragility/othello.py</text>
+        <text class="t-muted" x="371" y="386">the outcome H3 predicts</text>
+        <circle class="st-ring" cx="583" cy="340" r="7"/>
+        <rect class="box" x="45" y="448" width="250" height="80" rx="8"/>
+        <text class="t-title" x="61" y="475">7 · Master table</text>
+        <text class="t-mono" x="61" y="497">results.py</text>
+        <text class="t-muted" x="61" y="516">one row per model</text>
+        <circle class="st-ring" cx="273" cy="470" r="7"/>
+        <rect class="box" x="355" y="578" width="250" height="80" rx="8"/>
+        <text class="t-title" x="371" y="605">8 · Analysis H1–H4</text>
+        <text class="t-mono-muted" x="371" y="627">not written yet</text>
+        <text class="t-muted" x="371" y="646">agreement and prediction</text>
+        <circle class="st-ring" cx="583" cy="600" r="7"/>
+      </svg>
+    </div>
+    <ul class="legend" aria-label="Status markers">
+      <li><svg viewBox="0 0 16 16" aria-hidden="true"><circle class="st-fill" cx="8" cy="8" r="6.5"/></svg>done</li>
+      <li><svg viewBox="0 0 16 16" aria-hidden="true"><circle class="st-ring" cx="8" cy="8" r="6"/><path class="st-fill" d="M8,2 A6,6 0 0,0 8,14 Z"/></svg>in progress</li>
+      <li><svg viewBox="0 0 16 16" aria-hidden="true"><circle class="st-ring" cx="8" cy="8" r="6"/></svg>not started (as of 19 October)</li>
+    </ul>
+    <figcaption><b><!--FIGNUM--></b> The eight stages, the script that runs each one, and the files they hand to each other. Stages 3, 5 and 6 also read games through <code>othello.py</code>, and <code>demo/app.py</code> reads every output for the Streamlit demo. Nothing below the dashed freeze line may score a zoo model until those git tags exist.</figcaption>
+  </figure>
+  <div class="status">
+    <p><strong>Where things stood on 19 October.</strong> The data was fetched on every training machine. 80 of the 81 Othello models had a training record, and the last one, a large Mamba in slice 4, was finishing. All the preregistration tags and <code>fragility-v1</code> existed. D1–D4 had scored the two Othello-GPT anchors but no zoo model yet. Fragility, the master table and the H1–H4 analysis had not run.</p>
+  </div>
+  <details class="cmds">
+    <summary>Commands for each stage <span class="hint">run from the repo root</span></summary>
+<pre><code><span class="c"># Environment: conda activate wmconcord, or any venv built from requirements.txt
+# (pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu130)</span>
+<span class="warn"># Training and scoring are GPU jobs. Check nvidia-smi first: one job per GPU.</span>
+
+<span class="c"># 1 · Get the data (once per machine; skips files already there)</span>
+bash src/shellscripts/fetch_othello_data.sh
+
+<span class="c"># 2 · Plan the runs (frozen; rerun only to regenerate the two CSVs)</span>
+python src/component/run_matrix.py
+
+<span class="c"># 3 · Train one model, or a whole slice</span>
+python src/zoo/train.py --arch transformer --scale small --distribution synthetic --seed 0
+bash src/shellscripts/train_slice.sh 4 --dry_run     <span class="c"># print the plan only</span>
+bash src/shellscripts/train_slice.sh 4               <span class="c"># train; models that have a record are skipped</span>
+
+<span class="c"># 4 · Rebuild the registry (admitted = validation legal move rate of at least 0.50)</span>
+<span class="warn"># This rewrites src/docs/zoo_registry.csv. Per train_slice.sh, commit only your
+# training records, never this file.</span>
+python src/zoo/registry.py
+
+<span class="c"># Plumbing check: loads models through the interface, prints legal move rates, saves nothing</span>
+python src/diagnostics/interface_check.py
+
+<span class="c"># 5 · Score. Anchors: othello_gpt_synthetic othello_gpt_championship
+#     --save writes results/D*/&lt;id&gt;.json</span>
+python src/diagnostics/d1/next_token.py           --models &lt;id&gt; ... --save
+python src/diagnostics/d2/state_equiv.py          --models &lt;id&gt; ... --save
+python src/diagnostics/d3/inductive_bias.py       --models &lt;id&gt; ... --save
+python src/diagnostics/d4/representation_probe.py --models &lt;id&gt; ... --save
+
+<span class="c"># 6 · Fragility suite (writes results/fragility/&lt;id&gt;.json)</span>
+python src/fragility/othello.py --model outputs/zoo/&lt;id&gt;/model.pt \
+--arch &lt;arch&gt; --scale &lt;scale&gt; --train_distribution &lt;dist&gt; --seed &lt;seed&gt;
+
+<span class="c"># 7 · Master table (writes results/master_table.csv and lists missing runs)</span>
+python src/component/results.py --domain othello
+
+<span class="c"># 8 · Analysis H1–H4: not in the repo yet</span>
+
+<span class="c"># Any time: the demo and the tests</span>
+streamlit run demo/app.py
+python -m pytest src/tests -q
+
+<span class="c"># One-off checks from weeks 5 and 6</span>
+bash src/shellscripts/throughput.sh                  <span class="c"># cost per model, see src/docs/throughput.md</span>
+python src/diagnostics/d4/reproduce_nanda_probe.py   <span class="c"># reproduction gate against Nanda et al. 2023</span></code></pre>
+  </details>
+</section>
+
+<section class="section" id="l1-repo">
+  <h3><span class="num">1.5</span>Where each folder fits</h3>
+  <div class="table-scroll">
+    <table class="map-table">
+      <thead>
+        <tr><th scope="col">Folder</th><th scope="col">What lives there</th><th scope="col">Lessons</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>src/domains/</code></td><td><code>othello.py</code>: rules, tokens, game loading, true boards</td><td class="num">3, 4</td></tr>
+        <tr><td><code>src/component/</code></td><td><code>run_matrix.py</code> (the plan) and <code>results.py</code> (result format, master table)</td><td class="num">5, 9, 15</td></tr>
+        <tr><td><code>src/zoo/</code></td><td><code>train.py</code> (three architectures, training loop) and <code>registry.py</code> (trained models, admission)</td><td class="num">6, 7</td></tr>
+        <tr><td><code>src/shellscripts/</code></td><td>Launchers: fetch data, measure throughput, first models, train a slice</td><td class="num">4–7</td></tr>
+        <tr><td><code>src/diagnostics/</code></td><td><code>interface.py</code>, <code>interface_check.py</code>, and one folder per test (<code>d1</code>–<code>d4</code>), each with a toy version</td><td class="num">9–13</td></tr>
+        <tr><td><code>src/fragility/</code></td><td><code>othello.py</code>: the frozen fragility suite</td><td class="num">14</td></tr>
+        <tr><td><code>src/tests/</code></td><td>The pytest suite; GitHub Actions runs it on every pull request</td><td class="num">15</td></tr>
+        <tr><td><code>src/docs/</code></td><td>An explainer per test, plus the plan CSVs (models, run matrix, slices, registry)</td><td class="num">all</td></tr>
+        <tr><td><code>demo/</code></td><td><code>app.py</code>: the Streamlit demo for the 20 October presentation</td><td class="num">15</td></tr>
+        <tr><td><code>reports/</code></td><td>Proposal, preregistration, weekly progress, draw.io diagrams, LaTeX report</td><td class="num">1, 8</td></tr>
+        <tr><td><code>results/</code></td><td>Small JSON outputs, committed to git: training records and D1–D4 results</td><td class="num">7, 9</td></tr>
+        <tr><td><code>outputs/</code></td><td>Large files, ignored by git: checkpoints and training logs</td><td class="num">6, 7</td></tr>
+        <tr><td><code>~/artifacts/</code></td><td>Outside the repo: downloaded games and Othello-GPT weights</td><td class="num">4</td></tr>
+        <tr><td><code>research_paper/</code> · <code>presentation/</code> · <code>cookbooks/</code></td><td>Paper draft, slides, notebooks (templates for now)</td><td class="num">–</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note">
+    <span class="label">One habit to know before reading any code</span>
+    <p><code>src/</code> is not a Python package. Files load each other by file path through a small <code>_load()</code> helper built on <code>importlib</code>, which you will see at the top of almost every file. That is why every command runs from the repo root.</p>
+  </div>
+</section>
+
+<!--QUIZ:1.6-->

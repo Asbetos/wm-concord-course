@@ -1,0 +1,67 @@
+<header class="lesson-head">
+  <!--LESSON_HEAD-->
+  <p class="lede">D1 is the test most papers start and stop with: does the model only propose legal moves? It is the simplest of the four and the weakest, and the study includes it to measure exactly how much weaker. Everything it needs is already in Lesson 3.</p>
+  <p class="meta">About <!--MINUTES--> minutes · Files: <code>src/diagnostics/d1/next_token.py</code>, <code>src/docs/d1_next_token_validity.md</code> · Owner: Viharika</p>
+</header>
+
+<section class="section" id="l10-idea">
+  <h3><span class="num">10.1</span>The idea</h3>
+  <div class="prose">
+    <p>Take any prefix of a test game, say D3 C3 C4. The rules engine replays it and lists the legal next moves: C5 and E3. The model reads the same prefix and proposes its most likely next move. If that move is C5 or E3, the position counts as valid, even if the recorded game went on with the other one. If the model proposes anything else, say C3, which is already occupied, the position is invalid. D1 repeats this at every position of 1,000 test games.</p>
+    <p>The model does not need to guess the move the players chose; it only has to stay inside the rules. That is why D1 sits far above next-token accuracy (Lesson 6): about 0.94 against 0.15 for a medium transformer.</p>
+  </div>
+</section>
+
+<section class="section" id="l10-code">
+  <h3><span class="num">10.2</span>The score</h3>
+  <!--CODE:src/diagnostics/d1/next_token.py:92:107-->
+  <ul class="walk">
+    <li><span class="lref">96</span><span>Find the model’s own training distribution: from <code>models.csv</code> for a zoo model, from its metadata for an anchor.</span></li>
+    <li><span class="lref">97</span><span>Load 1,000 test games of that distribution and build them with legal moves (Lesson 3).</span></li>
+    <li><span class="lref">98</span><span>The score: <code>othello.legal_rate()</code>, the share of positions where the top move is legal. The same function decided admission on validation games; here it runs on test games.</span></li>
+    <li><span class="lref">99</span><span>A second, sampled rate, kept in <code>details</code> only (section 10.3).</span></li>
+    <li><span class="lref">100</span><span>The number of positions scored: every position that has a recorded next move, about 58 per game.</span></li>
+  </ul>
+</section>
+
+<section class="section" id="l10-sampled">
+  <h3><span class="num">10.3</span>The second number: sampling instead of argmax</h3>
+  <div class="prose">
+    <p>The top move hides how much probability the model puts on illegal moves. A model can rank a legal move first while still giving illegal moves 30% of its probability. So D1 also draws 10 moves at every position from the model’s full distribution (temperature 1.0, a fixed random seed) and reports the share of draws that are legal.</p>
+  </div>
+  <!--CODE:src/diagnostics/d1/next_token.py:63:83-->
+  <ul class="walk">
+    <li><span class="lref">68</span><span>One seeded random generator for the whole run, so the same model always gets the same draws.</span></li>
+    <li><span class="lref">71–75</span><span>Turn the scores into probabilities and draw 10 moves per position, with replacement.</span></li>
+    <li><span class="lref">78–82</span><span>For the same positions <code>legal_rate()</code> scores, look up whether each drawn token is legal and count.</span></li>
+  </ul>
+</section>
+
+<section class="section" id="l10-anchors">
+  <h3><span class="num">10.4</span>The anchors</h3>
+  <div class="table-scroll">
+    <table class="mid-table">
+      <thead><tr><th scope="col">Model</th><th scope="col">Score (argmax)</th><th scope="col">Sampled</th><th scope="col">Positions</th></tr></thead>
+      <tbody>
+        <tr><td>Othello-GPT synthetic</td><td class="num">0.9996</td><td class="num">0.9976</td><td class="num">57,950</td></tr>
+        <tr><td>Othello-GPT championship</td><td class="num">0.8962</td><td class="num">0.8891</td><td class="num">57,876</td></tr>
+        <tr><td>An untrained model</td><td class="num">about 0.15</td><td class="num">–</td><td class="num">–</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="prose">
+    <p>Each anchor is scored on test games of its own distribution. The championship Othello-GPT stays inside the rules only 90% of the time on human games. The untrained baseline is what blind guessing gives: about 9 of the 60 squares are legal at a typical position.</p>
+  </div>
+</section>
+
+<section class="section" id="l10-limits">
+  <h3><span class="num">10.5</span>What D1 cannot see</h3>
+  <ul class="points">
+    <li><span class="p-name">Boards it confuses.</span><span>A model can propose a legal move at almost every position while mixing up boards that allow the same few moves. D1 looks at one position at a time and cannot notice. D2 compares pairs of positions to catch exactly this (Lesson 11).</span></li>
+    <li><span class="p-name">Competence in disguise.</span><span>D1 on test games is nearly the same number as the validation legal move rate that admitted the model, which the study calls competence. That is why the H1 pairs that include D1 can be marked not interpretable once competence is controlled, and why H3 treats D1 as the reference that the other diagnostics must beat (Lesson 8).</span></li>
+  </ul>
+<pre class="plain"><code>python src/diagnostics/d1/next_token.py --models othello_gpt_synthetic othello_gpt_championship
+python src/diagnostics/d1/next_token.py --models othello_transformer_small_synthetic_s0 --save   <span class="c"># needs prereg-v1.1</span></code></pre>
+</section>
+
+<!--QUIZ:10.6-->

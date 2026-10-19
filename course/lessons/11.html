@@ -1,0 +1,152 @@
+<header class="lesson-head">
+  <!--LESSON_HEAD-->
+  <p class="lede">D1 asks whether each proposed move is legal. D2 asks something D1 cannot: does the model treat two histories that reach the same board the same way, and two histories that reach different boards differently, exactly where the boards differ? It is the state-equivalence test of Vafa et al. (2024), and this lesson takes it apart line by line.</p>
+  <p class="meta">About <!--MINUTES--> minutes · Files: <code>src/diagnostics/d2/state_equiv.py</code>, <code>src/diagnostics/d2/toy_check.py</code>, <code>src/docs/d2_state_equivalence.md</code> · Owner: Venkatesh</p>
+</header>
+
+<section class="section" id="l11-idea">
+  <h3><span class="num">11.1</span>The idea: what a state is</h3>
+  <div class="prose">
+    <p>In Othello, once you know the board and whose turn it is, the history no longer matters: every possible future is decided. The Myhill–Nerode theorem says the same thing for any system with a finite set of states (a deterministic finite automaton): two histories are the <em>same state</em> exactly when every continuation is equally allowed after both. A model with a real world model should respect that in both directions.</p>
+  </div>
+  <ul class="points">
+    <li><span class="p-name">Compression.</span><span>Two histories that reach the same state should get the same answer from the model. If they don’t, the model is still reacting to how it got there.</span></li>
+    <li><span class="p-name">Distinction.</span><span>Two histories that reach different states should get different answers, on exactly the moves that differ. If they don’t, the model has merged two boards.</span></li>
+  </ul>
+  <figure>
+    <div class="fig-box"><!--FIG:d2-pairs--></div>
+    <ul class="legend" aria-label="Markers">
+      <li><span class="sw" aria-hidden="true"><i class="dot" style="background:var(--disc-white)"></i></span>a legal next move</li>
+      <li><span class="sw" aria-hidden="true"><i class="sqr"></i></span>the boundary square</li>
+    </ul>
+    <figcaption><b><!--FIGNUM--></b> Both kinds of pair, verified by the project’s own rules when this page was built. Left: two move orders, one board, the same legal moves. Right: two histories of the same length whose legal moves differ by exactly one square, B4.</figcaption>
+  </figure>
+</section>
+
+<section class="section" id="l11-accepted">
+  <h3><span class="num">11.2</span>What the model “accepts”</h3>
+  <div class="prose">
+    <p>A model outputs scores, not a set of moves, so D2 needs a rule for which moves the model accepts after a history <em>h</em>. It uses no threshold at all: if <em>k</em> moves are truly legal after <em>h</em>, the model’s accepted set A(<em>h</em>) is its <em>k</em> highest-scoring squares. The model gets exactly as many picks as there are legal moves, so nothing has to be tuned, and a perfect model’s picks are exactly the legal set.</p>
+  </div>
+</section>
+
+<section class="section" id="l11-errors">
+  <h3><span class="num">11.3</span>The two errors, worked by hand</h3>
+  <div class="worked">
+    <div class="wk-card">
+      <p class="eyebrow">Compression · same state pair</p>
+      <p class="wk-desc">D3 C3 C4 and C4 C3 D3: legal C5, E3 after both, so k = 2. A hypothetical model accepts:</p>
+      <div class="wk-row"><span class="wk-label">A(h)</span><span class="chip">C5</span><span class="chip off">E3</span></div>
+      <div class="wk-row"><span class="wk-label">A(g)</span><span class="chip">C5</span><span class="chip off">F3</span></div>
+      <p class="wk-desc">Accepted after only one of the two: E3 and F3, out of the 3 moves accepted after either.</p>
+      <p class="wk-result">compression error = |A(h) △ A(g)| ÷ |A(h) ∪ A(g)| = 2 ÷ 3</p>
+    </div>
+    <div class="wk-card">
+      <p class="eyebrow">Distinction · different state pair</p>
+      <p class="wk-desc">E6 D6 C5 (legal B4, F4, B6, F6) and F5 D6 C6 (legal F4, B6, F6). The boundary is B4: legal after the first only. A hypothetical model accepts:</p>
+      <div class="wk-row"><span class="wk-label">A(h)</span><span class="chip ok">B4</span><span class="chip">F4</span><span class="chip">B6</span><span class="chip">F6</span></div>
+      <div class="wk-row"><span class="wk-label">A(g)</span><span class="chip off">B4</span><span class="chip">F4</span><span class="chip">F6</span></div>
+      <p class="wk-desc">B4 is accepted after both, so the model has not separated the boards where they differ.</p>
+      <p class="wk-result">distinction error = boundary moves not separated ÷ boundary moves = 1 ÷ 1</p>
+    </div>
+  </div>
+  <div class="prose">
+    <p>A boundary move that is legal only after <em>h</em> counts as separated when the model accepts it after <em>h</em> and not after <em>g</em>, and the mirror holds for moves legal only after <em>g</em>. Both errors are averaged over their pairs, and the score keeps the project’s rule that higher is better:</p>
+  </div>
+  <p class="formula">score = 1 − ( mean compression error + mean distinction error ) / 2</p>
+</section>
+
+<section class="section" id="l11-histories">
+  <h3><span class="num">11.4</span>Histories: every prefix, with its true state</h3>
+  <!--CODE:src/diagnostics/d2/state_equiv.py:100:133-->
+  <ul class="walk">
+    <li><span class="lref">100–104</span><span>Who moves next? <code>legal_next()</code> returns the other player’s moves if there are any, otherwise the mover’s own (Lesson 3). So whether its first square is legal for the other player tells which list it is, and therefore whether the other player has to pass.</span></li>
+    <li><span class="lref">111</span><span>Replay all games with legal moves (Lesson 3).</span></li>
+    <li><span class="lref">114–123</span><span>Every prefix of every game is a history. Positions with no legal move (game over) are left out, and a prefix shared by several games, such as a common opening, is kept once: a pair of identical move sequences says nothing about state equivalence.</span></li>
+    <li><span class="lref">124–129</span><span>The true state is the board plus the player to move, packed into bytes so that two equal states compare equal as dictionary keys.</span></li>
+  </ul>
+</section>
+
+<section class="section" id="l11-pairs">
+  <h3><span class="num">11.5</span>Sampling the pairs</h3>
+  <div class="prose">
+    <p>All possible pairs are far too many to score, so both errors are estimated from samples: up to 2,000 pairs of each kind, drawn with seed 0. The pairs depend only on the games, never on the model, so every model of a distribution is judged on exactly the same pairs.</p>
+  </div>
+  <!--CODE:src/diagnostics/d2/state_equiv.py:140:177-->
+  <ul class="walk">
+    <li><span class="lref">143–147</span><span>Same-state pairs: group the histories by state, then list every pair inside each group. These come from move orders that can be swapped, which is rarer than it sounds.</span></li>
+    <li><span class="lref">149–151</span><span>If there are more than 2,000, keep a uniform random sample of 2,000.</span></li>
+    <li><span class="lref">162–166</span><span>Different-state pairs are matched on length: a history length is drawn in proportion to how many pairs it offers, so every possible same-length pair is equally likely.</span></li>
+    <li><span class="lref">169–176</span><span>Draw two histories of that length, and draw again if their legal sets are equal or the pair was already taken.</span></li>
+  </ul>
+</section>
+
+<section class="section" id="l11-score">
+  <h3><span class="num">11.6</span>Accepted sets and the errors in code</h3>
+  <!--CODE:src/diagnostics/d2/state_equiv.py:184:218-->
+  <ul class="walk">
+    <li><span class="lref">190–194</span><span>One forward pass per game gives the scores for every prefix at once, because the models are causal: position <em>t</em> only sees moves 0 to <em>t</em>. Token 0 (padding) is dropped from the scores.</span></li>
+    <li><span class="lref">195–199</span><span>Ranking with <code>argsort</code> twice gives every square its rank; a square is accepted when its rank is below <em>k</em>, the number of legal moves. That is the top-<em>k</em> rule for all histories in one vectorized step.</span></li>
+    <li><span class="lref">203–206</span><span>Compression error per pair: moves accepted after exactly one history (<code>^</code>, exclusive or) over moves accepted after either (<code>|</code>).</span></li>
+    <li><span class="lref">209–218</span><span>Distinction error per pair: the boundary moves, legal after exactly one history, and the share of them the model fails to separate.</span></li>
+  </ul>
+  <!--CODE:src/diagnostics/d2/state_equiv.py:255:276-->
+  <ul class="walk">
+    <li><span class="lref">264–273</span><span>Same-state pairs occur only where move orders can be swapped, so 1,000 games may not give enough. If there are fewer than 500, add 1,000 test games at a time, up to 5,000. The synthetic anchor needed 4,000 games; the championship anchor 2,000.</span></li>
+    <li><span class="lref">261–263, 275</span><span>The prepared histories and pairs are cached per distribution, so scoring 27 models of one distribution replays the games once.</span></li>
+  </ul>
+</section>
+
+<section class="section" id="l11-checks">
+  <h3><span class="num">11.7</span>Why both errors are needed</h3>
+  <div class="prose">
+    <p>The tests run three fake models whose answers are known in advance. Their scores show what each error catches:</p>
+  </div>
+  <div class="table-scroll">
+    <table class="mid-table">
+      <thead><tr><th scope="col">Fake model</th><th scope="col">Compression error</th><th scope="col">Distinction error</th><th scope="col">Score</th></tr></thead>
+      <tbody>
+        <tr><td>Oracle: accepts exactly the legal moves of the true board</td><td class="num">0.000</td><td class="num">0.000</td><td class="num">1.000</td></tr>
+        <tr><td>Constant: always accepts the same squares, ignoring the history</td><td class="num">0.000</td><td class="num">0.969</td><td class="num">0.516</td></tr>
+        <tr><td>Noise: a random answer for every exact move sequence</td><td class="num">0.926</td><td class="num">0.868</td><td class="num">0.103</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="prose">
+    <p>The constant model is the reason for the second error. It never treats two histories of the same board differently, because it treats everything the same, so its compression is perfect. Only the distinction error reveals that it cannot tell any boards apart.</p>
+  </div>
+</section>
+
+<section class="section" id="l11-anchors">
+  <h3><span class="num">11.8</span>The anchors, and how sure the numbers are</h3>
+  <div class="table-scroll">
+    <table class="mid-table">
+      <thead><tr><th scope="col">Anchor</th><th scope="col">Compression error (pairs)</th><th scope="col">Distinction error (pairs)</th><th scope="col">Score</th></tr></thead>
+      <tbody>
+        <tr><td>Othello-GPT synthetic</td><td class="num">0.000 (615)</td><td class="num">0.001 (2,000)</td><td class="num">0.9994</td></tr>
+        <tr><td>Othello-GPT championship</td><td class="num">0.145 (768)</td><td class="num">0.322 (2,000)</td><td class="num">0.7663</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="prose">
+    <p>The synthetic Othello-GPT behaves almost exactly like the rules. The championship one, with a D1 of 0.90, merges a third of the board pairs it should tell apart: a sign that a good legal move rate can hide a weaker state model, which is the whole reason D2 exists.</p>
+    <p>Each error is a mean over pairs of a number between 0 and 1, so its standard error is at most 0.5 ÷ √n, whatever the model: at most 0.022 at the 500-pair minimum and 0.011 at 2,000. Measured on the anchors it was at most 0.005. A D2 score is known to about ±0.01, well below the differences between models that H1 compares (Amendment 2, D).</p>
+  </div>
+  <!--CHART:d2-lengths|Where the same-state pairs come from: the history length of each sampled pair. Swappable move orders appear early in random games (lengths 3 to 10) and somewhat later in championship games, so D2’s compression error mostly measures the opening and middle game.-->
+</section>
+
+<section class="section" id="l11-limits">
+  <h3><span class="num">11.9</span>Limits, and the toy check</h3>
+  <ul class="points">
+    <li><span class="p-name">Compression is measured early.</span><span>Same-state pairs come from transpositions, which happen mostly in the first moves. The pair lengths are saved in every result so this can be checked per model.</span></li>
+    <li><span class="p-name">Next move only.</span><span>Vafa et al. (2024) also test longer continuations. D2 uses the next move only, which keeps it cheap enough for 81 models per domain and uses the same ground truth as the other diagnostics. The paper states this limitation.</span></li>
+  </ul>
+<pre class="plain"><code>python src/diagnostics/d2/toy_check.py                    <span class="c"># the synthetic Othello-GPT on two hand-sized pairs</span>
+python src/diagnostics/d2/toy_check.py --model untrained  <span class="c"># a tiny untrained model, runs on any laptop</span>
+python src/diagnostics/d2/state_equiv.py --models othello_gpt_synthetic othello_gpt_championship</code></pre>
+  <div class="prose">
+    <p><code>toy_check.py</code> finds the shortest same-state pair and the different-state pair with the smallest boundary in 1,000 random games, prints both boards side by side with the truly legal moves and the moves the model accepts, and computes each pair’s error. It is the five-minute live demo of D2, and it refuses zoo models, since protocols may only be tried on the anchors.</p>
+  </div>
+</section>
+
+<!--QUIZ:11.10-->

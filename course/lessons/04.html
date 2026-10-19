@@ -1,0 +1,182 @@
+<header class="lesson-head">
+  <!--LESSON_HEAD-->
+  <p class="lede">Where the games come from and how <code>othello.py</code> reads them: two very different file formats, a cleaning step, three training distributions built from two sources, and the split rules every later stage obeys.</p>
+  <p class="meta">About <!--MINUTES--> minutes · Files: <code>src/shellscripts/fetch_othello_data.sh</code>, <code>src/domains/othello.py</code> lines 63–70 and 166–300</p>
+</header>
+
+<section class="section" id="l4-sources">
+  <h3><span class="num">4.1</span>Two sources, one folder outside the repo</h3>
+  <div class="prose">
+    <p>All game data lives outside the repository, in <code>~/artifacts</code>, so git never carries gigabytes of games. One script downloads everything, and it is safe to rerun: anything already there is skipped.</p>
+  </div>
+  <div class="table-scroll">
+    <table class="wide-table">
+      <thead><tr><th scope="col">Folder</th><th scope="col">What it holds</th><th scope="col">Where it comes from</th><th scope="col">Size</th></tr></thead>
+      <tbody>
+        <tr><td><code>othello_data/data/</code></td><td>Synthetic games, <code>train/</code> and <code>val/</code> folders of <code>games_*.bin</code></td><td>The othello_world corpus (Li et al. 2023), repackaged on Hugging Face as <code>alexandretl/othello</code></td><td>190 + 48 files, about 100,000 games each</td></tr>
+        <tr><td><code>othello_championship/</code></td><td>Championship games, <code>WTH_1977.wtb</code> to <code>WTH_2025.wtb</code></td><td>The WTHOR tournament archive of the French Othello Federation</td><td>49 yearly files, 137,548 games</td></tr>
+        <tr><td><code>othello_gpt_tl/</code></td><td>The two reference models, <code>synthetic_model.pth</code> and <code>championship_model.pth</code></td><td>Othello-GPT weights in TransformerLens format (<code>NeelNanda/Othello-GPT-Transformer-Lens</code>)</td><td>The anchors</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <!--CODE:src/shellscripts/fetch_othello_data.sh:20:45-->
+  <ul class="walk">
+    <li><span class="lref">20–22</span><span>Stop at the first error, and put everything under <code>$ARTIFACTS</code> (default <code>~/artifacts</code>).</span></li>
+    <li><span class="lref">24–29</span><span>Synthetic games: download the archive from Hugging Face and unpack it, unless <code>train/</code> already exists.</span></li>
+    <li><span class="lref">31–35</span><span>The two Othello-GPT checkpoints, also from Hugging Face.</span></li>
+    <li><span class="lref">37–43</span><span>One WTHOR file per year. <code>wget -nc</code> never re-downloads a file that is already there.</span></li>
+  </ul>
+  <div class="note">
+    <span class="label">Moving the data</span>
+    <p>Three environment variables override the default folders: <code>WMC_OTHELLO_DATA</code> and <code>WMC_CHAMPIONSHIP_DATA</code> (read by <code>othello.py</code>, lines 63–64) and <code>WMC_OTHELLO_GPT</code> (read by <code>interface.py</code>).</p>
+  </div>
+</section>
+
+<section class="section" id="l4-flow">
+  <h3><span class="num">4.2</span>Two sources become three distributions</h3>
+  <figure>
+    <div class="fig-box">
+      <svg viewBox="0 0 960 340" role="img" aria-label="Synthetic games, 238 .bin files of random legal games, pass through list_files, which assigns 190 train files, 38 val files and the last 10 val-folder files as test. Championship games, 49 yearly WTHOR files, pass through load_championship, which removes duplicates and illegal games, shuffles with seed 0, splits 80/10/10 and caches the split. Both feed load_distribution, which returns synthetic, championship or mixed games as an n by 60 array of int8 squares with -1 padding.">
+        <defs>
+          <marker id="l4-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker>
+        </defs>
+        <text class="t-muted" x="20" y="24">downloaded once into ~/artifacts by fetch_othello_data.sh</text>
+        <path class="wire" d="M270,86 H318" marker-end="url(#l4-arrow)"/>
+        <path class="wire" d="M270,254 H318" marker-end="url(#l4-arrow)"/>
+        <path class="wire" d="M570,86 H592 V112 H618" marker-end="url(#l4-arrow)"/>
+        <path class="wire" d="M570,254 H592 V178 H618" marker-end="url(#l4-arrow)"/>
+        <rect class="box" x="20" y="40" width="250" height="92" rx="8"/>
+        <text class="t-title" x="36" y="66">Synthetic (othello_world)</text>
+        <text class="t-mono" x="36" y="89">238 .bin files</text>
+        <text class="t-muted" x="36" y="110">about 100,000 random games each</text>
+        <rect class="box" x="20" y="208" width="250" height="92" rx="8"/>
+        <text class="t-title" x="36" y="234">Championship (WTHOR)</text>
+        <text class="t-mono" x="36" y="257">WTH_1977 … WTH_2025.wtb</text>
+        <text class="t-muted" x="36" y="278">137,548 tournament games</text>
+        <rect class="box" x="320" y="40" width="250" height="92" rx="8"/>
+        <text class="t-title" x="336" y="66">list_files(split)</text>
+        <text class="t-body" x="336" y="89">train: the 190 files in train/</text>
+        <text class="t-body" x="336" y="110">val: 38 files · test: the last 10</text>
+        <rect class="box" x="320" y="208" width="250" height="92" rx="8"/>
+        <text class="t-title" x="336" y="234">load_championship()</text>
+        <text class="t-body" x="336" y="257">dedupe · drop illegal · shuffle</text>
+        <text class="t-body" x="336" y="278">80 / 10 / 10 split, cached</text>
+        <rect class="box-truth" x="620" y="40" width="320" height="260" rx="8"/>
+        <text class="t-title" x="636" y="66">load_distribution(name, split, n)</text>
+        <text class="t-strong" x="636" y="108">synthetic</text>
+        <text class="t-body" x="636" y="128">the first n games of the split’s files</text>
+        <line class="divider" x1="636" y1="146" x2="924" y2="146"/>
+        <text class="t-strong" x="636" y="174">championship</text>
+        <text class="t-body" x="636" y="194">n games drawn with the seed, or all of them</text>
+        <line class="divider" x1="636" y1="212" x2="924" y2="212"/>
+        <text class="t-strong" x="636" y="240">mixed</text>
+        <text class="t-body" x="636" y="260">half synthetic, the rest championship,</text>
+        <text class="t-body" x="636" y="280">shuffled together with the seed</text>
+        <text class="t-mono" x="620" y="326">→ (n, 60) int8 squares, −1 = padding</text>
+      </svg>
+    </div>
+    <figcaption><b><!--FIGNUM--></b> Every stage asks for games the same way, <code>load_distribution(name, split, n_games, seed)</code>, and gets back the same shape: one row per game, 60 squares, −1 after the last move. Where the rows came from is hidden behind that one call.</figcaption>
+  </figure>
+</section>
+
+<section class="section" id="l4-synthetic">
+  <h3><span class="num">4.3</span>Synthetic games: one byte per move</h3>
+  <div class="prose">
+    <p>The othello_world corpus holds millions of games played by choosing uniformly among the legal moves, the same way the Random move button in Lesson 2 plays. Each <code>.bin</code> file is a flat run of bytes, 60 per game: byte <em>k</em> is the square (0 to 63) of move <em>k</em>. A game that ends early is padded with 255, which reads as −1 once the array is loaded as signed bytes. Here are the first 20 bytes of the first training file:</p>
+  </div>
+  <!--HTML:bytes-synthetic-->
+  <!--CODE:src/domains/othello.py:170:202-->
+  <ul class="walk">
+    <li><span class="lref">170–180</span><span><code>list_files()</code>: the training split is the <code>train/</code> folder. Validation and test share the <code>val/</code> folder: the last <code>SYNTHETIC_TEST_FILES</code> (10) files are the test split, <code>games_228.bin</code> to <code>games_237.bin</code>, and the other 38 are validation. Files are sorted by their number, not as text, so <code>games_10</code> comes after <code>games_9</code>.</span></li>
+    <li><span class="lref">183–195</span><span><code>load_games()</code>: read whole files as int8, reshape to 60 columns, stop once there are enough games, and keep exactly <code>n_games</code>. It warns, not fails, when the files run out.</span></li>
+    <li><span class="lref">198–202</span><span><code>load_split()</code> joins the two and fails loudly if the folder is empty.</span></li>
+  </ul>
+</section>
+
+<section class="section" id="l4-wthor">
+  <h3><span class="num">4.4</span>Championship games: the WTHOR format</h3>
+  <div class="prose">
+    <p>A WTHOR file starts with a 16-byte header, then one 68-byte record per game. The header’s bytes 4 to 7 hold the number of games; the rest (creation date, year, board size) is not needed. In each record, the first 8 bytes describe the game (tournament, the two players, the scores) and the last 60 are the moves, one byte each, written as 10 × row + column with both counted from 1. So 56 means row 5, column 6: F5. Here is the start of the first game in <code>WTH_2025.wtb</code>:</p>
+  </div>
+  <!--HTML:bytes-wthor-->
+  <!--CODE:src/domains/othello.py:209:225-->
+  <ul class="walk">
+    <li><span class="lref">216–220</span><span>Read the file as unsigned bytes, take the game count from bytes 4–7 (little-endian int32), and check the file length agrees with it.</span></li>
+    <li><span class="lref">221</span><span>Keep bytes 8 to 67 of each record: the moves.</span></li>
+    <li><span class="lref">222</span><span>Convert 10 × row + column to the code’s square index, (row − 1) × 8 + (column − 1). A 0 byte (no move) becomes −1, the same padding as the synthetic files.</span></li>
+  </ul>
+  <div class="note">
+    <span class="label">One orientation for every human game</span>
+    <p>The archive records every game in the same orientation: all 110,005 championship training games open with F5. Random games open with D3, C4, F5 and E6 about equally often. Lesson 14 shows how the fragility suite turns this into a test, by rotating and reflecting the board.</p>
+  </div>
+</section>
+
+<section class="section" id="l4-clean">
+  <h3><span class="num">4.5</span>Cleaning and splitting the championship games</h3>
+  <!--CODE:src/domains/othello.py:233:258-->
+  <ul class="walk">
+    <li><span class="lref">237–241</span><span>If the split was made before, load it from <code>championship_split.npz</code>. The split is made once and then never changes.</span></li>
+    <li><span class="lref">245–247</span><span>Read all 49 years, drop exact duplicate games (<code>np.unique</code> over whole rows, which also sorts them), then drop any game that fails <code>replay()</code>.</span></li>
+    <li><span class="lref">248–252</span><span>Shuffle with the fixed <code>SPLIT_SEED</code> (0), then cut 10% for validation, 10% for test and keep the rest for training. Sorting first makes the shuffle the only thing that decides the order.</span></li>
+    <li><span class="lref">254</span><span>Cache the three splits and the cleaning counts.</span></li>
+  </ul>
+  <div class="table-scroll">
+    <table class="mid-table">
+      <thead><tr><th scope="col">Step</th><th scope="col">Games</th></tr></thead>
+      <tbody>
+        <tr><td>Read from 49 files</td><td class="num">137,548</td></tr>
+        <tr><td>Exact duplicates removed</td><td class="num">41</td></tr>
+        <tr><td>Illegal games removed</td><td class="num">0</td></tr>
+        <tr><td>Train · val · test</td><td class="num">110,005 · 13,751 · 13,751</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="section" id="l4-distributions">
+  <h3><span class="num">4.6</span>load_distribution(): synthetic, championship, mixed</h3>
+  <!--CODE:src/domains/othello.py:261:285-->
+  <ul class="walk">
+    <li><span class="lref">267–270</span><span>Unknown names and splits fail at once, before any file is read.</span></li>
+    <li><span class="lref">272–273</span><span>Synthetic: the first <code>n_games</code> of the split’s files, the same games every time.</span></li>
+    <li><span class="lref">275–280</span><span>Championship: <code>n_games</code> drawn without replacement with the seed, or every game of the split when fewer exist (with a warning).</span></li>
+    <li><span class="lref">281–285</span><span>Mixed: <code>round(0.5 × n)</code> synthetic games plus <code>min(the rest, what exists)</code> championship games, shuffled together with the seed.</span></li>
+  </ul>
+  <div class="note warn">
+    <span class="label">Worth knowing: what the models actually train on</span>
+    <p>Training asks for 1,280,000 games (Lesson 5), but the championship training split has only 110,005. So the championship models train on all 110,005 games, each seen about 11 to 12 times over the 5,000 steps. The mixed models ask for 640,000 of each, and the championship half is capped at 110,005: their training set is 750,005 games, about 85% synthetic. The training logs confirm it (<code>mixed: 750005 train games</code>). Validation and test sets of 1,000 games are a true 50 / 50, because 500 championship games always exist. The preregistration describes mixed as 50 / 50, so keep this in mind when you read results for the mixed models.</p>
+  </div>
+</section>
+
+<section class="section" id="l4-splits">
+  <h3><span class="num">4.7</span>The split rules every stage obeys</h3>
+  <div class="prose">
+    <p>The preregistration fixes what each split may be used for. <strong>train</strong> is for training only. <strong>val</strong> is for checks during training and for anything a diagnostic fits: a probe, an adaptation, a choice of layer. <strong>test</strong> is for final scores only. A score measured on games that also helped choose a setting would look better than it is.</p>
+  </div>
+  <div class="table-scroll">
+    <table class="wide-table">
+      <thead><tr><th scope="col">Stage</th><th scope="col">train</th><th scope="col">val</th><th scope="col">test</th></tr></thead>
+      <tbody>
+        <tr><td><code>train.py</code></td><td>all training games</td><td>1,000 games: legal move rate, which decides admission</td><td>–</td></tr>
+        <tr><td>D1 next-token validity</td><td>–</td><td>–</td><td>1,000 games</td></tr>
+        <tr><td>D2 state equivalence</td><td>–</td><td>–</td><td>1,000 games, more if pairs are short (up to 5,000)</td></tr>
+        <tr><td>D3 inductive bias</td><td>–</td><td>64 games to adapt on</td><td>1,000 games</td></tr>
+        <tr><td>D4 probing</td><td>–</td><td>10,000 games to fit probes, 1,000 to choose the layer</td><td>1,000 games</td></tr>
+        <tr><td>Fragility suite</td><td>–</td><td>–</td><td>1,000 games per variant</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="prose">
+    <p>Every diagnostic scores a model on games of <em>its own</em> training distribution: a championship model is tested on championship games. Scoring on the other distributions is the fragility suite’s job.</p>
+  </div>
+</section>
+
+<section class="section" id="l4-tokens">
+  <h3><span class="num">4.8</span>to_tokens(): the fast path for training</h3>
+  <!--CODE:src/domains/othello.py:292:300-->
+  <div class="prose">
+    <p>Training needs only the token sequence, not the boards. <code>to_tokens()</code> converts squares to tokens without calling <code>replay()</code>, which makes it fast enough for 1.28 million games. It does not check legality, which is safe because the synthetic games were generated legally and the championship games were already replayed during cleaning. Everything else in the project goes through <code>build()</code> (Lesson 3), which does replay and check.</p>
+  </div>
+</section>
+
+<!--QUIZ:4.9-->

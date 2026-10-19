@@ -1,0 +1,146 @@
+<header class="lesson-head">
+  <!--LESSON_HEAD-->
+  <p class="lede">The last stage turns 324 Othello result files into answers. This lesson covers the master table that joins them, what the H1–H4 analysis has to compute (that code is still to be written), the Streamlit demo, and the tests and CI that keep all of it honest. It ends with how a fifth diagnostic would plug in.</p>
+  <p class="meta">About <!--MINUTES--> minutes · Files: <code>src/component/results.py</code>, <code>demo/app.py</code>, <code>src/tests/</code>, <code>.github/workflows/tests.yml</code></p>
+</header>
+
+<section class="section" id="l15-master">
+  <h3><span class="num">15.1</span>The master table</h3>
+  <!--CODE:src/component/results.py:242:265-->
+  <ul class="walk">
+    <li><span class="lref">246–247</span><span>Read the plan (<code>models.csv</code>) and every result file of every diagnostic, validating each one (Lesson 9).</span></li>
+    <li><span class="lref">249–253</span><span>One row per planned model, optionally for one domain: its model fields and whether it is held out.</span></li>
+    <li><span class="lref">254–257</span><span>For each diagnostic, its score and status. A run with no result file is marked <code>missing</code>, which is different from <code>failed</code> or <code>skipped</code>: those come with a written reason.</span></li>
+    <li><span class="lref">262–265</span><span>The missing report lists, per diagnostic, every planned run with neither a score nor a reason. The rule the project follows is zero silent gaps.</span></li>
+  </ul>
+<pre class="plain"><code>python src/component/results.py --domain othello
+<span class="c"># wrote results/master_table.csv: 81 models
+#   D1: 81 with a result, 0 missing   ... one line per diagnostic</span></code></pre>
+  <div class="prose">
+    <p>The master table holds the four diagnostic scores and nothing else. The analysis joins two more sources to it: competence and admission from <code>src/docs/zoo_registry.csv</code> (Lesson 7), and fragility from <code>results/fragility/</code> (Lesson 14).</p>
+  </div>
+</section>
+
+<section class="section" id="l15-analysis">
+  <h3><span class="num">15.2</span>From the table to H1–H4</h3>
+  <div class="prose">
+    <p>The analysis code is the one stage the repository does not have yet. Its job is fully specified by the preregistration (Lesson 8), so it can be written without any new decisions. This is what it has to compute, per domain, on the admitted zoo models only (never the anchors):</p>
+  </div>
+  <figure>
+    <div class="fig-box">
+      <svg viewBox="0 0 960 372" role="img" aria-label="Three inputs, the master table with four diagnostic scores, the registry with competence and admission, and the fragility results, feed four analyses. H1: Kendall tau, partial tau controlling competence, Spearman rho and Kendall W, with bootstrap intervals. H2: per-model disagreement as the standard deviation of rank percentiles, regressed on architecture, scale and distribution, Holm correction, compared with the seed noise floor. H3: relative fragility, D1 as reference, partial Spearman correlations of D2, D3 and D4. H4: the same code rerun on the held-out interpreter domain.">
+        <defs>
+          <marker id="l15-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker>
+        </defs>
+        <rect class="box" x="20" y="30" width="220" height="70" rx="8"/>
+        <text class="t-title-sm" x="36" y="56">master_table.csv</text>
+        <text class="t-muted" x="36" y="78">D1–D4 score per model</text>
+        <rect class="box" x="20" y="150" width="220" height="70" rx="8"/>
+        <text class="t-title-sm" x="36" y="176">zoo_registry.csv</text>
+        <text class="t-muted" x="36" y="198">competence, admitted</text>
+        <rect class="box" x="20" y="270" width="220" height="70" rx="8"/>
+        <text class="t-title-sm" x="36" y="296">results/fragility/</text>
+        <text class="t-muted" x="36" y="318">drops, in-distribution rate</text>
+        <path class="wire" d="M240,65 H290 V165 H318" marker-end="url(#l15-arrow)"/>
+        <path class="wire" d="M240,185 H318" marker-end="url(#l15-arrow)"/>
+        <path class="wire" d="M240,305 H290 V205 H318" marker-end="url(#l15-arrow)"/>
+        <rect class="box-truth" x="320" y="145" width="150" height="80" rx="8"/>
+        <text class="t-title-sm" x="336" y="173">admitted models</text>
+        <text class="t-muted" x="336" y="194">one domain at a time</text>
+        <text class="t-muted" x="336" y="212">anchors excluded</text>
+        <path class="wire" d="M470,185 H500 V54 H528" marker-end="url(#l15-arrow)"/>
+        <path class="wire" d="M500,185 V140 H528" marker-end="url(#l15-arrow)"/>
+        <path class="wire" d="M500,185 V226 H528" marker-end="url(#l15-arrow)"/>
+        <path class="wire" d="M500,185 V312 H528" marker-end="url(#l15-arrow)"/>
+        <rect class="box" x="530" y="20" width="410" height="70" rx="8"/>
+        <text class="t-title-sm" x="546" y="45">H1 · agreement</text>
+        <text class="t-body" x="546" y="66">Kendall tau and partial tau (competence), Spearman rho,</text>
+        <text class="t-body" x="546" y="83">Kendall W raw and on residual ranks; bootstrap intervals</text>
+        <rect class="box" x="530" y="106" width="410" height="70" rx="8"/>
+        <text class="t-title-sm" x="546" y="131">H2 · systematic or noise</text>
+        <text class="t-body" x="546" y="152">SD of each model’s four rank percentiles, regressed on</text>
+        <text class="t-body" x="546" y="169">architecture, scale, distribution; Holm; seed noise floor</text>
+        <rect class="box" x="530" y="192" width="410" height="70" rx="8"/>
+        <text class="t-title-sm" x="546" y="217">H3 · prediction</text>
+        <text class="t-body" x="546" y="238">relative fragility; D1 as reference; partial Spearman</text>
+        <text class="t-body" x="546" y="255">of D2, D3, D4 given D1; regression with arch and scale</text>
+        <rect class="box" x="530" y="278" width="410" height="70" rx="8"/>
+        <text class="t-title-sm" x="546" y="303">H4 · generalization</text>
+        <text class="t-body" x="546" y="324">the same code on the interpreter, after H1–H3 are written</text>
+        <text class="t-body" x="546" y="341">down for Othello and navigation; same categories?</text>
+      </svg>
+    </div>
+    <figcaption><b><!--FIGNUM--></b> What the analysis stage has to do. Every interval is a 95% bootstrap over models, 2,000 resamples, seed 0, and every decision rule is already written in the preregistration.</figcaption>
+  </figure>
+  <div class="note">
+    <span class="label">A checklist for whoever writes it</span>
+    <p>Filter to admitted models of one domain; keep seeds as separate models; report raw and competence-controlled H1 side by side, with the “agreement through competence” and “not interpretable” labels (A1, A5); run the 0.90 sensitivity analysis only if at least 10 models qualify (A3); use relative fragility for H3, with raw fragility as a secondary result (A2); report D4’s “decodable but not causal” models separately and test whether the label adds anything beyond selectivity; and report how many models were not admitted, per architecture and scale.</p>
+  </div>
+</section>
+
+<section class="section" id="l15-demo">
+  <h3><span class="num">15.3</span>The Streamlit demo</h3>
+  <div class="prose">
+    <p><code>demo/app.py</code> was built for the preliminary presentation: pick any model, see each diagnostic on it. It only reads files and never writes results.</p>
+  </div>
+  <div class="table-scroll">
+    <table class="wide-table">
+      <thead><tr><th scope="col">Page</th><th scope="col">Shows</th><th scope="col">Reads</th></tr></thead>
+      <tbody>
+        <tr><td>Model zoo</td><td>The registry with the selected model highlighted, its training record, and which results exist for it</td><td><code>zoo_registry.csv</code>, <code>results/zoo_training/</code></td></tr>
+        <tr><td>D1 live</td><td>A real game replayed move by move: the true board, the legal moves, the model’s pick and its top 5, and the running legal move rate</td><td>A checkpoint and the Othello data</td></tr>
+        <tr><td>D2, D3, D4</td><td>The saved result: score, method, per-layer or per-task numbers as a chart, the full JSON</td><td><code>results/D*/</code></td></tr>
+        <tr><td>Fragility</td><td>In-distribution rate, the drop per variant, detour completion rates</td><td><code>results/fragility/</code></td></tr>
+        <tr><td>Concordance</td><td>The master table of admitted models and Kendall / Spearman matrices between diagnostics (no intervals: those belong to the analysis code)</td><td>Two or more diagnostics on three or more models</td></tr>
+      </tbody>
+    </table>
+  </div>
+<pre class="plain"><code>streamlit run demo/app.py   <span class="c"># from the repo root, on a machine with outputs/zoo/ and ~/artifacts</span></code></pre>
+  <div class="prose">
+    <p>The two Othello-GPTs appear in the model picker when their weights are present. Models are loaded through <code>registry.load_model</code>, so a checkpoint that does not match its record shows an error instead of a wrong demo.</p>
+  </div>
+</section>
+
+<section class="section" id="l15-tests">
+  <h3><span class="num">15.4</span>Tests and CI</h3>
+  <div class="prose">
+    <p>Most tests run on fake models whose correct answers are known in advance, so they need no data, no checkpoints and no GPU. Tests that do need the real data or the Othello-GPT weights skip themselves when the files are missing.</p>
+  </div>
+  <div class="table-scroll">
+    <table class="wide-table">
+      <thead><tr><th scope="col">File</th><th scope="col">What it pins down</th></tr></thead>
+      <tbody>
+        <tr><td><code>test_othello_domain.py</code></td><td>Start board, first moves, tokens round trip, random games replay legally, build() shapes and labels, illegal games dropped</td></tr>
+        <tr><td><code>test_othello_distributions.py</code></td><td>The WTHOR reader on hand-made files, cleaning, the cached split, the three distributions and the mixed ratio</td></tr>
+        <tr><td><code>test_othello_fragility.py</code></td><td>The freeze hash, symmetries keep the start board, real passes, a perfect model scores 0 and a broken one fails, detours are reproducible</td></tr>
+        <tr><td><code>test_interface.py</code>, <code>test_results.py</code>, <code>test_registry.py</code></td><td>Shapes, every architecture’s activations, a crash becomes a failed result, schema validation, the master table and missing report, admission, the checkpoint hash check</td></tr>
+        <tr><td><code>test_d1_next_token.py</code></td><td>An oracle scores 1, a model that only proposes padding scores 0, positions match legal_rate()</td></tr>
+        <tr><td><code>test_d2_state_equiv.py</code></td><td>Histories and pairs, the pass rule, errors on hand-made sets, oracle / constant / noise, too few pairs, adding games</td></tr>
+        <tr><td><code>test_d3_inductive_bias.py</code></td><td>A model whose last layer is the board beats its random twin, identical models give no gap, the original weights never change, the symbolic arm (with a stand-in for PySR on CI)</td></tr>
+        <tr><td><code>test_d4_representation_probe.py</code></td><td>A planted board is read at the right layer and beats the control, a model that uses its board is causal and one that only stores it is not, edits run in layer order on every architecture</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <!--CODE:.github/workflows/tests.yml:1:28-->
+  <div class="prose">
+    <p>GitHub Actions runs the whole suite on every pull request and every push to <code>main</code>, with CPU-only PyTorch and without PySR’s Julia backend. Locally: <code>python -m pytest src/tests -q</code>.</p>
+  </div>
+</section>
+
+<section class="section" id="l15-plugin">
+  <h3><span class="num">15.5</span>Adding a fifth diagnostic</h3>
+  <div class="prose">
+    <p>The proposal promises a plug-in interface: any future world-model test can be compared with the four on identical ground truth. With everything in this course, that means:</p>
+  </div>
+  <ol class="steps">
+    <li><span>Write a module with <code>DIAGNOSTIC</code>, <code>METHOD</code> and <code>score(model, split, n_games, data_seed, **config)</code> that returns <code>itf.result_for(...)</code>, takes games and truth from <code>othello.py</code>, fits only on val and scores on test (Lesson 9).</span></li>
+    <li><span>Give it a name in <code>run_matrix.py</code> (<code>DIAGNOSTICS</code> and <code>DIAG_NAMES</code>), which gives it a result folder and lets <code>results.validate()</code> accept it. That adds rows to the frozen plan, so it needs an amendment.</span></li>
+    <li><span>Test it on fake models with known answers, the way the four existing ones are tested: an oracle, a constant model, a planted board.</span></li>
+    <li><span>Write its protocol into a dated preregistration amendment and tag it, before it scores a single zoo model, and give its script the same tag check (Lesson 8).</span></li>
+  </ol>
+  <div class="prose">
+    <p>That is the whole repository. Every lesson’s code excerpts are generated from the project at build time, so after the code changes, rebuilding this course keeps every excerpt and line number in step.</p>
+  </div>
+</section>
+
+<!--QUIZ:15.6-->
